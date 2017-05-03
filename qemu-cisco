@@ -1,0 +1,34 @@
+#!/bin/sh
+#
+# Cisco virtual router startup
+#
+# -nographic  to use serial console
+#
+
+QEMU=qemu-system-x86_64
+#QEMU=/home/baccala/src/qemu/i386-softmmu/qemu-system-i386
+
+#KVM="-enable-kvm -no-kvm-irqchip"
+KVM="-enable-kvm"
+
+if [ "$1" = "echo" ]; then
+    EXEC=echo
+else
+    EXEC=exec
+fi
+
+if [ "$1" = "--no-kvm" ]; then
+    KVM=
+fi
+
+#CDROM="-drive media=cdrom,file=~/Downloads/csr1000v-universalk9.03.17.03.S.156-1.S3-std.iso,readonly"
+CDROM="-cdrom /home/baccala/Downloads/csr1000v-universalk9.03.17.03.S.156-1.S3-std.iso"
+
+#DISPLAY="-nographic -vga none"
+DISPLAY="-curses"
+
+UUID="-uuid 6f9d1f98-3cca-498d-829b-65eb45c55f36"
+
+# $EXEC $QEMU $KVM -m 2560 $DISPLAY -drive cache=writeback,file="Cisco CSR 1000V.qcow2" $CDROM -net nic -net user
+$EXEC $QEMU -machine q35 $KVM -m 2560 $DISPLAY $UUID -hda "Cisco CSR 1000V.qcow2" -net nic -net user
+
