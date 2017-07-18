@@ -77,6 +77,10 @@ def associate_elastic_ip():
   ec2.associate_address(AllocationId = find_first_unassociated_ip(), InstanceId = get_instances(get_vpcids())[0])
   
 
+def terminate_instances():
+  for i in get_instances(get_vpcids()):
+    ec2.terminate_instances(InstanceIds=[i])
+
 #delete_extraneous_vpcs()
 
 #print ec2.delete_subnet(SubnetId=SubnetId)
