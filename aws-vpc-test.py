@@ -23,6 +23,8 @@ def create_vpc_and_subnet():
 
   print 'SubnetId:', SubnetId
 
+  return SubnetId
+
 def delete_extraneous_vpcs():
 
   for subnet in ec2.describe_subnets()['Subnets']:
@@ -35,7 +37,7 @@ def delete_extraneous_vpcs():
        print vpc
        ec2.delete_vpc(VpcId=vpc['VpcId'])
 
-def create_two_instances():
+def create_two_instances(SubnetId):
   response = ec2.run_instances(
           ImageId='ami-f4cc1de2',
           MinCount=2,
@@ -43,24 +45,44 @@ def create_two_instances():
           InstanceType='t2.medium',
           SubnetId = SubnetId)
 
-vpcids=[]
-for vpc in ec2.describe_vpcs()['Vpcs']:
-  if vpc['CidrBlock'] == '10.0.0.0/16':
-     vpcids.append(vpc['VpcId'])
+def get_vpcids():
+  vpcids=[]
+  for vpc in ec2.describe_vpcs()['Vpcs']:
+    if vpc['CidrBlock'] == '10.0.0.0/16':
+       vpcids.append(vpc['VpcId'])
+  return vpcids
 
-print vpcids
+#print vpcids
 
-response = ec2.describe_instances()
-for resv in response['Reservations']:
-  for instance in resv['Instances']:
-    if instance.get('VpcId') in vpcids:
-      #print instance
-      #ec2.terminate_instances(InstanceIds=[instance['InstanceId']])
-      print instance['InstanceId'], instance['State']
+def get_instances(vpcids):
+  response = ec2.describe_instances()
+  result = []
+  for resv in response['Reservations']:
+    for instance in resv['Instances']:
+      if instance.get('VpcId') in vpcids:
+        #print instance
+        #ec2.terminate_instances(InstanceIds=[instance['InstanceId']])
+        # print instance['InstanceId'], instance['State']
+        result.append(instance['InstanceId'])
+  return result
 
-delete_extraneous_vpcs()
+def find_first_unassociated_ip():
+  for addr in ec2.describe_addresses()['Addresses']:
+    if 'InstanceId' not in addr:
+      return addr['AllocationId']
+
+# print find_first_unassociated_ip()
+
+def associate_elastic_ip():
+  ec2.associate_address(AllocationId = find_first_unassociated_ip(), InstanceId = get_instances(get_vpcids())[0])
+  
+
+#delete_extraneous_vpcs()
 
 #print ec2.delete_subnet(SubnetId=SubnetId)
 
 #print ec2.delete_vpc(VpcId=VpcId)
+
+#ec2.create_internet_gateway()
+#ec2.attach_internet_gateway(InternetGatewayId='igw-c4dc94a2', VpcId=get_vpcids()[0])
 
