@@ -25,24 +25,13 @@ def create_vpc_and_subnet():
 
   return SubnetId
 
-def delete_extraneous_vpcs():
-
-  for subnet in ec2.describe_subnets()['Subnets']:
-    if subnet['CidrBlock'] == '10.0.0.0/16':
-      print subnet
-      ec2.delete_subnet(SubnetId=subnet['SubnetId'])
-
-  for vpc in ec2.describe_vpcs()['Vpcs']:
-    if vpc['CidrBlock'] == '10.0.0.0/16':
-       print vpc
-       ec2.delete_vpc(VpcId=vpc['VpcId'])
-
 def create_two_instances(SubnetId):
   response = ec2.run_instances(
           ImageId='ami-f4cc1de2',
           MinCount=2,
           MaxCount=2,
           InstanceType='t2.medium',
+          KeyName='baccala',
           SubnetId = SubnetId)
 
 def get_vpcids():
@@ -80,6 +69,41 @@ def associate_elastic_ip():
 def terminate_instances():
   for i in get_instances(get_vpcids()):
     ec2.terminate_instances(InstanceIds=[i])
+
+def delete_extraneous_vpcs():
+
+  vpcids = get_vpcids()
+
+  for gw in ec2.describe_internet_gateways()['InternetGateways']:
+    if gw['Attachments'][0]['VpcId'] in vpcids:
+      print 'Deleting Gateway: ', gw
+      ec2.detach_internet_gateway(InternetGatewayId = gw['InternetGatewayId'], VpcId = gw['Attachments'][0]['VpcId'])
+      ec2.delete_internet_gateway(InternetGatewayId = gw['InternetGatewayId'])
+
+  for subnet in ec2.describe_subnets()['Subnets']:
+    if subnet['CidrBlock'] == '10.0.0.0/16':
+      print 'Deleting Subnet:', subnet
+      ec2.delete_subnet(SubnetId=subnet['SubnetId'])
+
+  for vpc in ec2.describe_vpcs()['Vpcs']:
+    if vpc['CidrBlock'] == '10.0.0.0/16':
+       print 'Deleting VPC:', vpc
+       ec2.delete_vpc(VpcId=vpc['VpcId'])
+
+def print_status():
+  vpcids = get_vpcids()
+  print "vpcids = ", vpcids
+  for gw in ec2.describe_internet_gateways()['InternetGateways']:
+    if gw['Attachments'][0]['VpcId'] in vpcids:
+      print 'Gateway: ', gw
+  for sn in ec2.describe_subnets()['Subnets']:
+    if sn['VpcId'] in vpcids:
+      print 'Subnet:', sn
+  print 'Instances:', get_instances(vpcids)
+
+# This creates a default route to the Internet Gateway
+
+#ec2.create_route(RouteTableId='rtb-08113a70', DestinationCidrBlock='0.0.0.0/0', GatewayId='igw-c4dc94a2')
 
 #delete_extraneous_vpcs()
 
