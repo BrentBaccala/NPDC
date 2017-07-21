@@ -10,7 +10,7 @@ ec2 = session.client('ec2')
 # print(response)
 # print [[i['InstanceId'], i['State']] for r in response['Reservations'] for i in r['Instances']]
 
-def create_vpc_and_subnet():
+def create_vpc():
 
   response = ec2.create_vpc(CidrBlock='10.0.0.0/16')
   VpcId = response['Vpc']['VpcId']
@@ -22,6 +22,18 @@ def create_vpc_and_subnet():
   SubnetId = response['Subnet']['SubnetId']
 
   print 'SubnetId:', SubnetId
+
+  gateway = ec2.create_internet_gateway()['InternetGateway']['InternetGatewayId']
+  ec2.attach_internet_gateway(InternetGatewayId = gateway, VpcId = VpcId)
+
+  print 'Gateway:', gateway
+
+  # This creates a default route to the Internet Gateway
+
+  rtid = ec2.describe_route_tables(Filters=[{'Name': 'vpc-id', 'Values': [VpcId]}])['RouteTables'][0]['RouteTableId']
+  ec2.create_route(RouteTableId = rtid, DestinationCidrBlock = '0.0.0.0/0', GatewayId = gateway)
+
+  print 'Route Table:', rtid
 
   return SubnetId
 
@@ -100,17 +112,3 @@ def print_status():
     if sn['VpcId'] in vpcids:
       print 'Subnet:', sn
   print 'Instances:', get_instances(vpcids)
-
-# This creates a default route to the Internet Gateway
-
-#ec2.create_route(RouteTableId='rtb-08113a70', DestinationCidrBlock='0.0.0.0/0', GatewayId='igw-c4dc94a2')
-
-#delete_extraneous_vpcs()
-
-#print ec2.delete_subnet(SubnetId=SubnetId)
-
-#print ec2.delete_vpc(VpcId=VpcId)
-
-#ec2.create_internet_gateway()
-#ec2.attach_internet_gateway(InternetGatewayId='igw-c4dc94a2', VpcId=get_vpcids()[0])
-
