@@ -1,6 +1,7 @@
 #!/usr/bin/python
 
 import boto3
+import time
 
 session = boto3.Session(profile_name='bruce')
 
@@ -66,11 +67,13 @@ def create_one_subnet():
 
 def create_two_subnets():
 
-  response = ec2.create_subnet(VpcId=VpcId, CidrBlock='10.0.1.0/24')
-  print response
+  response1 = ec2.create_subnet(VpcId=VpcId, CidrBlock='10.0.1.0/24')
+  print response1
 
-  response = ec2.create_subnet(VpcId=VpcId, CidrBlock='10.0.2.0/24')
-  print response
+  response2 = ec2.create_subnet(VpcId=VpcId, CidrBlock='10.0.2.0/24')
+  print response2
+
+  return [response1['Subnet']['SubnetId'], response2['Subnet']['SubnetId']]
 
 def create_instances(N, SubnetId):
   response = ec2.run_instances(
@@ -80,6 +83,28 @@ def create_instances(N, SubnetId):
           InstanceType='t2.medium',
           KeyName='baccala',
           SubnetId = SubnetId)
+
+  return [inst['InstanceId'] for inst in response['Instances']]
+
+  # List comprehension: the last line has the same result as this:
+  #
+  # result=[]
+  # for inst in response['Instances']
+  #   result.append(inst['InstanceId'])
+  # return result
+
+def create_two_armed():
+  subnets = create_two_subnets()
+  instance1 = create_instances(1, subnets[0])[0]
+  instance2 = create_instances(1, subnets[1])[0]
+
+  while ec2.describe_instances(InstanceIds=[instance1])['Reservations'][0]['Instances'][0]['State']['Name'] != 'running':
+    print 'Waiting for', instance1, 'to start'
+    time.sleep(3)
+
+  nid = ec2.create_network_interface(SubnetId=subnets[1])['NetworkInterface']['NetworkInterfaceId']
+  ec2.attach_network_interface(NetworkInterfaceId = nid, InstanceId = instance1, DeviceIndex=1)
+ 
 
 def get_instances(vpcids = get_vpcids()):
   response = ec2.describe_instances()
@@ -108,6 +133,27 @@ def terminate_instances():
   for i in get_instances(get_vpcids()):
     ec2.terminate_instances(InstanceIds=[i])
 
+def get_subnets():
+  vpcids = get_vpcids()
+  subnets=[]
+  for sn in ec2.describe_subnets()['Subnets']:
+    if sn['VpcId'] in vpcids:
+      subnets.append(sn['SubnetId'])
+  return subnets
+
+def delete_subnets():
+
+  subnets = get_subnets()
+
+  for ni in ec2.describe_network_interfaces(Filters=[{'Name': 'subnet-id', 'Values': subnets}])['NetworkInterfaces']:
+    print 'Deleting Network Interface:', ni['NetworkInterfaceId']
+    ec2.delete_network_interface(NetworkInterfaceId = ni['NetworkInterfaceId'])
+
+  for subnet in subnets:
+    print 'Deleting Subnet:', subnet
+    ec2.delete_subnet(SubnetId=subnet)
+
+
 def delete_extraneous_vpcs():
 
   vpcids = get_vpcids()
@@ -118,18 +164,7 @@ def delete_extraneous_vpcs():
       ec2.detach_internet_gateway(InternetGatewayId = gw['InternetGatewayId'], VpcId = gw['Attachments'][0]['VpcId'])
       ec2.delete_internet_gateway(InternetGatewayId = gw['InternetGatewayId'])
 
-  subnets=[]
-  for sn in ec2.describe_subnets()['Subnets']:
-    if sn['VpcId'] in vpcids:
-      subnets.append(sn['SubnetId'])
-
-  for ni in ec2.describe_network_interfaces(Filters=[{'Name': 'subnet-id', 'Values': subnets}])['NetworkInterfaces']:
-    print 'Deleting Network Interface:', ni['NetworkInterfaceId']
-    ec2.delete_network_interface(NetworkInterfaceId = ni['NetworkInterfaceId'])
-
-  for subnet in subnets:
-    print 'Deleting Subnet:', subnet
-    ec2.delete_subnet(SubnetId=subnet)
+  delete_subnets()
 
   for vpc in vpcids:
      print 'Deleting VPC:', vpc
