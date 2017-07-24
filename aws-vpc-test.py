@@ -75,9 +75,9 @@ def create_two_subnets():
 
   return [response1['Subnet']['SubnetId'], response2['Subnet']['SubnetId']]
 
-def create_instances(N, SubnetId):
+def create_instances(N, SubnetId, AMI='ami-f4cc1de2'):
   response = ec2.run_instances(
-          ImageId='ami-f4cc1de2',
+          ImageId = AMI,
           MinCount=N,
           MaxCount=N,
           InstanceType='t2.medium',
@@ -97,14 +97,22 @@ def create_two_armed():
   subnets = create_two_subnets()
   instance1 = create_instances(1, subnets[0])[0]
   instance2 = create_instances(1, subnets[1])[0]
+  cisco = create_instances(1, subnets[0], AMI='ami-23f79835')[0]
 
-  while ec2.describe_instances(InstanceIds=[instance1])['Reservations'][0]['Instances'][0]['State']['Name'] != 'running':
-    print 'Waiting for', instance1, 'to start'
+  while ec2.describe_instances(InstanceIds=[cisco])['Reservations'][0]['Instances'][0]['State']['Name'] != 'running':
+    print 'Waiting for', cisco, 'to start'
     time.sleep(3)
 
+  original_nid = find_network_interfaces(cisco)[0]
+
+  # attach a second network interface to the CSR 1000V
+
   nid = ec2.create_network_interface(SubnetId=subnets[1])['NetworkInterface']['NetworkInterfaceId']
-  ec2.attach_network_interface(NetworkInterfaceId = nid, InstanceId = instance1, DeviceIndex=1)
- 
+  ec2.attach_network_interface(NetworkInterfaceId = nid, InstanceId = cisco, DeviceIndex=1)
+
+  # associate our elastic IP address with the CSR 1000V's original network interface
+
+  associate_elastic_ip(NetworkInterface = original_nid)
 
 def get_instances(vpcids = get_vpcids()):
   response = ec2.describe_instances()
@@ -118,16 +126,32 @@ def get_instances(vpcids = get_vpcids()):
         result.append(instance['InstanceId'])
   return result
 
+def find_network_interfaces(instance):
+  return [ni['NetworkInterfaceId'] for ni in ec2.describe_network_interfaces(Filters=[{'Name': 'attachment.instance-id', 'Values': [instance]}])['NetworkInterfaces']]
+
+#### ELASTIC IP ADDRESES
+
 def find_first_unassociated_ip():
   for addr in ec2.describe_addresses()['Addresses']:
     if 'InstanceId' not in addr:
       return addr['AllocationId']
 
-# print find_first_unassociated_ip()
+def associate_elastic_ip(InstanceId = None, NetworkInterface = None):
+  # get_instances()[0]
+  if NetworkInterface == None:
+    ec2.associate_address(AllocationId = find_first_unassociated_ip(), InstanceId = InstanceId)
+  else:
+    ec2.associate_address(AllocationId = find_first_unassociated_ip(), NetworkInterfaceId = NetworkInterface)
 
-def associate_elastic_ip():
-  ec2.associate_address(AllocationId = find_first_unassociated_ip(), InstanceId = get_instances()[0])
-  
+def find_elastic_ip():
+  for addr in ec2.describe_addresses()['Addresses']:
+    ipaddr = addr.get('PrivateIpAddress')
+    if type(ipaddr) == type('string') and ipaddr.startswith('10.0.'):
+#      return addr['AllocationId']
+      return addr['AssociationId']
+
+def disassociate_elastic_ip():
+  ec2.disassociate_address(AssociationId = find_elastic_ip())  
 
 def terminate_instances():
   for i in get_instances(get_vpcids()):
