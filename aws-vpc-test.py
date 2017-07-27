@@ -22,6 +22,8 @@ def create_vpc():
 
   print 'VpcId:', VpcId
 
+  # Create an Internet gateway (IGW)
+
   gateway = ec2.create_internet_gateway()['InternetGateway']['InternetGatewayId']
   ec2.attach_internet_gateway(InternetGatewayId = gateway, VpcId = VpcId)
 
@@ -74,6 +76,8 @@ def create_two_subnets():
   print response2
 
   return [response1['Subnet']['SubnetId'], response2['Subnet']['SubnetId']]
+
+# default ami (f4cc1de2) is Ubuntu Linux
 
 def create_instances(N, SubnetId, AMI='ami-f4cc1de2'):
   response = ec2.run_instances(
