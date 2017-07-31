@@ -3,7 +3,7 @@
 import boto3
 import time
 
-session = boto3.Session(profile_name='bruce')
+session = boto3.Session(profile_name='student01')
 
 ec2 = session.client('ec2')
 
@@ -12,6 +12,12 @@ ec2 = session.client('ec2')
 # print [[i['InstanceId'], i['State']] for r in response['Reservations'] for i in r['Instances']]
 
 VpcId = ''
+
+def import_key_pair():
+   file = open('/home/baccala/.ssh/id_rsa.pub')
+   key = file.read()
+   ec2.import_key_pair(KeyName='baccala', PublicKeyMaterial=key)
+
 
 def create_vpc():
 
@@ -139,6 +145,7 @@ def find_first_unassociated_ip():
   for addr in ec2.describe_addresses()['Addresses']:
     if 'InstanceId' not in addr:
       return addr['AllocationId']
+  return ec2.allocate_address(Domain='vpc')['AllocationId']
 
 def associate_elastic_ip(InstanceId = None, NetworkInterface = None):
   # get_instances()[0]
