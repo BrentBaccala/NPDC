@@ -3,7 +3,7 @@
 import boto3
 import time
 
-session = boto3.Session(profile_name='student01')
+session = boto3.Session(profile_name='student03')
 
 ec2 = session.client('ec2')
 
@@ -136,6 +136,16 @@ def get_instances(vpcids = get_vpcids()):
         result.append(instance['InstanceId'])
   return result
 
+def get_stopped_instances(vpcids = get_vpcids()):
+  response = ec2.describe_instances()
+  result = []
+  for resv in response['Reservations']:
+    for instance in resv['Instances']:
+      if instance.get('VpcId') in vpcids:
+        if instance['State']['Code']==80:
+            result.append(instance['InstanceId'])
+  return result
+
 def find_network_interfaces(instance):
   return [ni['NetworkInterfaceId'] for ni in ec2.describe_network_interfaces(Filters=[{'Name': 'attachment.instance-id', 'Values': [instance]}])['NetworkInterfaces']]
 
@@ -228,3 +238,12 @@ def print_status():
 
 # ec2.create_network_interface(SubnetId=sns[1])
 # ec2.attach_network_interface(NetworkInterfaceId='eni-d0ee3302', InstanceId='i-09ee721db82537f20', DeviceIndex=1)
+
+def start_instances():
+  for i in get_stopped_instances(get_vpcids()):
+    ec2.start_instances(InstanceIds=[i])
+
+def stop_instances():
+  for i in get_instances(get_vpcids()):
+    ec2.stop_instances(InstanceIds=[i])
+
