@@ -3,7 +3,7 @@
 import boto3
 import time
 
-session = boto3.Session(profile_name='student03')
+session = boto3.Session(profile_name='instructor01')
 
 ec2 = session.client('ec2')
 
@@ -103,11 +103,20 @@ def create_instances(N, SubnetId, AMI='ami-f4cc1de2'):
   #   result.append(inst['InstanceId'])
   # return result
 
-def create_two_armed():
+def create_two_armed(mode='original'):
+  if mode=='centos':
+    ami1='ami-46c1b650'
+    ami2='ami-d5fa95c3'
+  elif mode=='original':
+    ami1='ami-f4cc1de2'
+    ami2='ami-23f79835'
+  else:
+    print 'Unknown mode'
+    return
   subnets = create_two_subnets()
-  instance1 = create_instances(1, subnets[0])[0]
-  instance2 = create_instances(1, subnets[1])[0]
-  cisco = create_instances(1, subnets[0], AMI='ami-23f79835')[0]
+  instance1 = create_instances(1, subnets[0],AMI=ami1)[0]
+  instance2 = create_instances(1, subnets[1],AMI=ami1)[0]
+  cisco = create_instances(1, subnets[0], AMI=ami2)[0]
 
   while ec2.describe_instances(InstanceIds=[cisco])['Reservations'][0]['Instances'][0]['State']['Name'] != 'running':
     print 'Waiting for', cisco, 'to start'
