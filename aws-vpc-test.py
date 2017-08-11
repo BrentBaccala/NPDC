@@ -107,6 +107,9 @@ def create_two_armed(mode='original'):
   if mode=='centos':
     ami1='ami-46c1b650'
     ami2='ami-d5fa95c3'
+  elif mode=='asav':
+    ami1='ami-46c1b650'
+    ami2='ami-e0e0adf7'
   elif mode=='original':
     ami1='ami-f4cc1de2'
     ami2='ami-23f79835'
