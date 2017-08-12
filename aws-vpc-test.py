@@ -85,12 +85,14 @@ def create_two_subnets():
 
 # default ami (f4cc1de2) is Ubuntu Linux
 
+instance_type={'ami-e0e0adf7':'c4.large'}
+
 def create_instances(N, SubnetId, AMI='ami-f4cc1de2'):
   response = ec2.run_instances(
           ImageId = AMI,
           MinCount=N,
           MaxCount=N,
-          InstanceType='t2.medium',
+          InstanceType=instance_type.get(AMI, 't2.medium'),
           KeyName='baccala',
           SubnetId = SubnetId)
 
