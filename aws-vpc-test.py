@@ -87,13 +87,14 @@ def create_two_subnets():
 
 instance_type={'ami-e0e0adf7':'c4.large'}
 
-def create_instances(N, SubnetId, AMI='ami-f4cc1de2'):
+def create_instances(N, SubnetId, AMI='ami-f4cc1de2', UserData=''):
   response = ec2.run_instances(
           ImageId = AMI,
           MinCount=N,
           MaxCount=N,
           InstanceType=instance_type.get(AMI, 't2.medium'),
           KeyName='baccala',
+          UserData=UserData,
           SubnetId = SubnetId)
 
   return [inst['InstanceId'] for inst in response['Instances']]
@@ -104,6 +105,10 @@ def create_instances(N, SubnetId, AMI='ami-f4cc1de2'):
   # for inst in response['Instances']
   #   result.append(inst['InstanceId'])
   # return result
+
+CiscoCommands = ['interface G 2', 'ip address dhcp', 'no shut', 'exit', 'hostname Brent', 'router ospf 171']
+
+CiscoUserData = '\n'.join(['ios-config-{}="{}"'.format(*pair) for pair in enumerate(CiscoCommands, 1)])
 
 def create_two_armed(mode='original'):
   if mode=='centos':
@@ -121,7 +126,7 @@ def create_two_armed(mode='original'):
   subnets = create_two_subnets()
   instance1 = create_instances(1, subnets[0],AMI=ami1)[0]
   instance2 = create_instances(1, subnets[1],AMI=ami1)[0]
-  cisco = create_instances(1, subnets[0], AMI=ami2)[0]
+  cisco = create_instances(1, subnets[0], AMI=ami2, UserData=CiscoUserData)[0]
 
   while ec2.describe_instances(InstanceIds=[cisco])['Reservations'][0]['Instances'][0]['State']['Name'] != 'running':
     print 'Waiting for', cisco, 'to start'
