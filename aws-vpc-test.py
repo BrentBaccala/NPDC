@@ -3,7 +3,7 @@
 import boto3
 import time
 
-session = boto3.Session(profile_name='instructor01')
+session = boto3.Session(profile_name='bruce')
 
 ec2 = session.client('ec2')
 
