@@ -3,9 +3,12 @@
 import boto3
 import time
 
-session = boto3.Session(profile_name='bruce')
-
-ec2 = session.client('ec2')
+try:
+   session = boto3.Session()
+   ec2 = session.client('ec2')
+except:
+   session = boto3.Session(profile_name='bruce')
+   ec2 = session.client('ec2')
 
 # response = ec2.describe_instances()
 # print(response)
