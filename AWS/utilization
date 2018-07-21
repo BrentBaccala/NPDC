@@ -1,0 +1,56 @@
+#!/bin/bash
+#
+# Sometimes I'd like to see a quick graph of EC2 CPU utilization
+# without having to login to the console.
+#
+# This script does that.  It passes its switches on the various aws
+# commands, so it can be run like "utilization --profile=kyle".
+#
+# You probably need to run this on Linux, as it uses the Go program
+# 'chart' for its graphical output (an HTML file is created in /tmp
+# and is opened in your default web browser).
+
+# GNU date will generate the timestamps we need to feed to AWS
+
+start_time=$(date --iso-8601=minutes --date=yesterday)
+end_time=$(date --iso-8601=minutes)
+
+# AWS EC2 collects a number of statistics by default.
+#
+# We can get a list of them like this:
+
+aws $@ cloudwatch list-metrics --query 'Metrics[].{Namespace: Namespace, MetricName: MetricName}'
+
+metric="CPUUtilization"
+
+# Once we've picked one (CPUUtilization), we need to figure out what
+# namespace it's in.
+
+namespace=$(aws $@ cloudwatch list-metrics --query "Metrics[? MetricName=='$metric'].Namespace" --output text)
+
+# We query the metric to find its available "dimensions", in this case
+# the only "dimension" is "InstanceId", and it tells us what values
+# are possible (the instance IDs for the running instances).
+
+aws $@ cloudwatch list-metrics --query "Metrics[? MetricName=='$metric']"
+
+# Let's do that again, but using an abbreviated format suitable for
+# looping over in a shell script
+
+instance_ids=$(aws $@ cloudwatch list-metrics --query "Metrics[? MetricName=='$metric'].Dimensions[*].[Value]" --output text)
+
+# Produce one graph for each available instance
+
+for id in $instance_ids; do
+
+# Now we're going to grab CPUUtilization and use a JMESPath query to
+# sort and format it nicely for display.
+
+   aws $@ cloudwatch get-metric-statistics --namespace $namespace --metric $metric --start-time $start_time --end-time $end_time --period 60 --statistics Average --dimensions Name=InstanceId,Value=$id --query 'sort_by(Datapoints, &Timestamp)[*].[Timestamp, Average]'
+
+# Same query, only piped to 'chart', which will render it in our web
+# browser.
+
+   aws $@ cloudwatch get-metric-statistics --namespace $namespace --metric $metric --start-time $start_time --end-time $end_time --period 60 --statistics Average --dimensions Name=InstanceId,Value=$id --query 'sort_by(Datapoints, &Timestamp)[*].[Timestamp, Average]' --output text | ~/go/bin/chart -t "$id CPU Utilization (last 24 hours)" line
+
+done
