@@ -109,24 +109,31 @@ def create_instances(N, SubnetId, AMI='ami-f4cc1de2', UserData=''):
   #   result.append(inst['InstanceId'])
   # return result
 
-CiscoCommands = ['interface G 2', 'ip address dhcp', 'no shut', 'exit', 'hostname Brent', 'router ospf 171']
-
-CiscoUserData = '\n'.join(['ios-config-{}="{}"'.format(*pair) for pair in enumerate(CiscoCommands, 1)])
-
 def create_two_armed(mode='original'):
+
   if mode=='centos':
     ami1='ami-46c1b650'
-    ami2='ami-d5fa95c3'
+    ami2='ami-d5fa95c3'  # CSR 1000V AX
+    CiscoCommands = ['interface G 2', 'ip address dhcp', 'no shut', 'exit', 'hostname Brent', 'router ospf 171']
   elif mode=='asav':
     ami1='ami-46c1b650'
     ami2='ami-e0e0adf7'
+    CiscoCommands = []
   elif mode=='original':
     ami1='ami-f4cc1de2'
-    ami2='ami-23f79835'
+    ami2='ami-23f79835'   # CSR 1000V BYOL
+    CiscoCommands = ['interface G 2', 'ip address dhcp', 'no shut', 'exit', 'hostname Brent', 'router ospf 171']
   else:
     print 'Unknown mode'
     return
-  subnets = create_two_subnets()
+
+  CiscoUserData = '\n'.join(['ios-config-{}="{}"'.format(*pair) for pair in enumerate(CiscoCommands, 1)])
+
+  try:
+    subnets = create_two_subnets()
+  except:
+    subnets = get_subnets()
+
   instance1 = create_instances(1, subnets[0],AMI=ami1)[0]
   instance2 = create_instances(1, subnets[1],AMI=ami1)[0]
   cisco = create_instances(1, subnets[0], AMI=ami2, UserData=CiscoUserData)[0]
