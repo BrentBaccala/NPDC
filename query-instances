@@ -1,3 +1,36 @@
-#!/bin/sh
+#!/bin/bash
 
-aws $* ec2 describe-instances --query="Reservations[].Instances[].{InstanceId:InstanceId, ImageId:ImageId, PrivateIpAddress:PrivateIpAddress, PublicIpAddress:PublicIpAddress, State:State.Name, Name:(Tags[?Key=='Name'].Value | [0])}"
+# Declare 'switches' and 'queries' to be arrays
+
+declare -a switches
+declare -a queries
+
+# Start with our standard queries
+
+queries+=("InstanceId:InstanceId")
+queries+=("InstanceType:InstanceType")
+queries+=("PrivateIpAddress:PrivateIpAddress")
+queries+=("PublicIpAddress:PublicIpAddress")
+queries+=("State:State.Name")
+queries+=("Name:(Tags[?Key=='Name'].Value | [0])")
+
+# Arguments are either switches or additional queries
+
+for arg in "$@"
+do
+  if [[ $arg =~ ^-.* ]]; then
+    switches+=($arg)
+  elif [[ $arg =~ ^.*:.* ]]; then
+    queries+=($arg)
+  else
+    queries+=($arg:$arg)
+  fi
+done
+
+# Switches are separated by spaces
+switchstr=${switches[*]}
+
+# Queries are separated by commas
+IFS=,
+
+aws $switchstr ec2 describe-instances --query="Reservations[].Instances[].{${queries[*]}}"
