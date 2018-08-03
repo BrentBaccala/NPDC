@@ -24,9 +24,11 @@ handle.login()
 
 mo = handle.query_dn('org-root/ls-iSCSI07/power')
 
-# the main options are 'up' or maybe 'admin-up', and 'soft-shut-down', or 'down'
+# The main options are 'up' or maybe 'admin-up', and 'soft-shut-down', or 'down'.
+#
+# 'up' doesn't seem to boot the server; you need to use 'admin-up'
 
-mo.state = 'up'
+mo.state = 'admin-up'
 
 handle.set_mo(mo)
 
