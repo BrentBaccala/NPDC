@@ -10,7 +10,7 @@ import math
 
 import subprocess
 
-gns3_server = "blade8:3080"
+gns3_server = "blade7:3080"
 
 # Create a new GNS3 project called 'ping-test'
 #
@@ -39,6 +39,82 @@ def remove_project(project_id):
 
 import atexit
 atexit.register(remove_project, my_project['project_id'])
+
+# Create an ISO image containing the boot configuration and upload it
+# to the GNS3 project.  We write the config to a temporary file,
+# convert it to ISO image, then post the ISO image to GNS3.
+#
+# This approach doesn't work with the standard GNS3 implementation,
+# which doesn't allow images to be loaded from the project directory.
+#
+# Requires a patched gns3-server.
+
+print "Building CSRv configuration..."
+
+CSRv_config = """
+int gig 1
+  ip addr dhcp
+  no shut
+
+line vty 0 4
+  transport input ssh
+  login local
+
+username cisco priv 15 password cisco
+
+ip route 0.0.0.0 0.0.0.0 192.168.57.1
+
+hostname R1
+
+! This doesn't work: crypto key generate rsa modulus 768
+! ...so do this instead
+
+! from https://community.cisco.com/t5/vpn-and-anyconnect/enabling-ssh-with-a-startup-config-or-similar/td-p/1636781
+
+event manager applet crypto_key authorization bypass
+ event timer cron cron-entry "@reboot" maxrun 60
+ action 1.0 cli command "enable"
+ action 1.1 cli command "config t"
+ action 1.2 cli command "crypto key generate rsa modulus 2048"
+ action 1.3 cli command "end"
+ action 1.4 cli command "write mem" pattern "confirm|#"
+ action 1.5 regexp "confirm" "$_cli_result"
+ action 1.6 if $_regexp_result eq "1"
+ action 1.7 cli command "y"
+ action 1.8 end
+ action 1.9 cli command "config t"
+ action 2.0 cli command "no event manager applet crypto_key"
+
+end
+"""
+
+import os
+import tempfile
+
+config_file = tempfile.NamedTemporaryFile(delete = False)
+
+config_file.write(CSRv_config)
+config_file.close()
+
+import subprocess
+
+genisoimage_command = ["genisoimage", "-input-charset", "utf-8", "-o", "-", "-l", "-graft-points", "iosxe_config.txt={}".format(config_file.name)]
+genisoimage_proc = subprocess.Popen(genisoimage_command, stdout=subprocess.PIPE)
+
+isoimage = genisoimage_proc.stdout.read()
+
+os.remove(config_file.name)
+
+print "Uploading CSRv configuration..."
+
+file_url = "http://{}/v2/projects/{}/files/config.iso".format(gns3_server, my_project['project_id'])
+result = requests.post(file_url, data=isoimage)
+result.raise_for_status()
+
+#for num in [0,1,2]:
+#   file_url = "http://{}/v2/projects/{}/files/config-{}.iso".format(gns3_server, my_project['project_id'], num)
+#   result = requests.post(file_url, data=isoimage)
+#   result.raise_for_status()
 
 # Configure a cloud node, a switch node, and three CSRv's, each with three interfaces
 
@@ -81,7 +157,9 @@ def CSRv_node(num):
         "node_type": "qemu",
         "properties": {
             "adapters": 3,
+            "adapter_type" : "virtio-net-pci",
             "hda_disk_image": "csr1000v-universalk9.16.07.01-serial.qcow2",
+            "cdrom_image" : "config.iso",
             "qemu_path": "/usr/bin/qemu-system-x86_64",
             "ram": 3072
         },
@@ -150,10 +228,15 @@ for num in [0,1,2]:
 
 print "Starting nodes..."
 
-for node in [switch] + CSRv:
-   node_url = "http://{}/v2/projects/{}/nodes/{}".format(gns3_server, my_project['project_id'], node['node_id'])
-   result = requests.post(node_url + "/start")
-   result.raise_for_status()
+#for node in [switch] + CSRv:
+#   node_url = "http://{}/v2/projects/{}/nodes/{}".format(gns3_server, my_project['project_id'], node['node_id'])
+#   result = requests.post(node_url + "/start")
+#   result.raise_for_status()
+
+
+project_start_url = "http://{}/v2/projects/{}/nodes/start".format(gns3_server, my_project['project_id'])
+result = requests.post(project_start_url)
+result.raise_for_status()
 
 # WAIT FOR NODES TO BOOT
 #
