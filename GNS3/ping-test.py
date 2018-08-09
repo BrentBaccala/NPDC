@@ -150,11 +150,11 @@ event manager applet crypto_key authorization bypass
 
 event manager applet send_notification authorization bypass
  event routing network 0.0.0.0/0 type add protocol connected ge 1
- action 1.0 cli command "copy run {}"
+ action 1.0 cli command "copy run {0}"
 
 event manager applet test_notification authorization bypass
  event none
- action 1.0 cli command "copy run {}"
+ action 1.0 cli command "copy run {0}"
 
 end
 """.format(notification_url)
