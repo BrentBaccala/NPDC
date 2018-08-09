@@ -29,17 +29,15 @@ class RequestHandler(BaseHTTPRequestHandler):
 server_address = ('', 0)
 httpd = HTTPServer(server_address, RequestHandler)
 
-# Catch keyboard interrupt and shutdown the httpd server that we're
+# Catch uncaught exceptions and shutdown the httpd server that we're
 # about to start.
 #
 # from https://stackoverflow.com/a/6598286/1493790
 
 import sys
 def my_except_hook(exctype, value, traceback):
-    if exctype == KeyboardInterrupt:
-        httpd.shutdown()
-    else:
-        sys.__excepthook__(exctype, value, traceback)
+    httpd.shutdown()
+    sys.__excepthook__(exctype, value, traceback)
 sys.excepthook = my_except_hook
 
 threading.Thread(target=httpd.serve_forever).start()
