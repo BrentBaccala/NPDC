@@ -153,11 +153,6 @@ event manager applet send_notification authorization bypass
  action 1.0 cli command "enable"
  action 2.0 cli command "copy run {0}"
 
-event manager applet test_notification authorization bypass
- event none
- action 1.0 cli command "enable"
- action 2.0 cli command "copy run {0}"
-
 end
 """.format(notification_url)
 
