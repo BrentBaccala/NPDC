@@ -134,7 +134,17 @@ event manager applet crypto_key authorization bypass
  action 1.2 cli command "crypto key generate rsa modulus 2048"
  action 2.0 cli command "no event manager applet crypto_key"
  action 3.0 cli command "end"
- action 4.0 cli command "copy run {}"
+
+! from http://wiki.nil.com/Detect_DHCP_client_address_change_with_EEM_applet
+!
+! "The event routing network 0.0.0.0/0 type add protocol connected
+!  event detector detects all additions of connected routes (the
+!  0.0.0.0/0 mask indicates we want to catch all changes regardless of
+!  the actual IP prefix)."
+
+event manager applet send_notification authorization bypass
+ event routing network 0.0.0.0/0 type add protocol connected ge 1
+ action 1.0 cli command "copy run {}"
 
 end
 """.format(notification_url)
