@@ -22,8 +22,7 @@ import threading
 from BaseHTTPServer import BaseHTTPRequestHandler,HTTPServer
 
 class RequestHandler(BaseHTTPRequestHandler):
-    def do_POST(self):
-        print "POST"
+    def do_PUT(self):
         self.send_response(200)
 
 server_address = ('', 0)
@@ -114,7 +113,13 @@ username cisco priv 15 password cisco
 
 ip route 0.0.0.0 0.0.0.0 192.168.57.1
 
+! A hostname is required for ssh to work
+
 hostname R1
+
+! This lets the "copy run URL" notification command work
+
+file prompt quiet
 
 ! This doesn't work: crypto key generate rsa modulus 768
 ! ...so do this instead
