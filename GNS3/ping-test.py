@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 #
 # Script to fire up a 3-node GNS3 topology, configure basic
 # routing between the nodes, and test ping connectivity.
@@ -19,11 +19,17 @@ gns3_server = "blade7:3080"
 # the host running this script.
 
 import threading
-from BaseHTTPServer import BaseHTTPRequestHandler,HTTPServer
+from http.server import BaseHTTPRequestHandler,HTTPServer
 
 class RequestHandler(BaseHTTPRequestHandler):
     def do_PUT(self):
+        length = self.headers['Content-Length']
+        self.send_response_only(100)
+        self.end_headers()
+        content = self.rfile.read(int(length))
+        # print(content.decode('utf-8'))
         self.send_response(200)
+        self.end_headers()
 
 server_address = ('', 0)
 httpd = HTTPServer(server_address, RequestHandler)
@@ -67,9 +73,9 @@ notification_url = "http://{}:{}/".format(get_ip(), httpd.server_port)
 #
 # This will error out with a 409 Conflict if 'ping-test' already exists
 
-print "Creating project..."
+print("Creating project...")
 
-new_project = {'name': 'ping-test'}
+new_project = {'name': 'ping-test', 'auto_close' : False}
 
 url = "http://{}/v2/projects".format(gns3_server)
 
@@ -98,7 +104,7 @@ atexit.register(remove_project, my_project['project_id'])
 #
 # Requires a patched gns3-server.
 
-print "Building CSRv configuration..."
+print("Building CSRv configuration...")
 
 CSRv_config = """
 int gig 1
@@ -146,6 +152,10 @@ event manager applet send_notification authorization bypass
  event routing network 0.0.0.0/0 type add protocol connected ge 1
  action 1.0 cli command "copy run {}"
 
+event manager applet test_notification authorization bypass
+ event none
+ action 1.0 cli command "copy run {}"
+
 end
 """.format(notification_url)
 
@@ -154,7 +164,7 @@ import tempfile
 
 config_file = tempfile.NamedTemporaryFile(delete = False)
 
-config_file.write(CSRv_config)
+config_file.write(CSRv_config.encode('utf-8'))
 config_file.close()
 
 import subprocess
@@ -168,7 +178,7 @@ isoimage = genisoimage_proc.stdout.read()
 
 os.remove(config_file.name)
 
-print "Uploading CSRv configuration..."
+print("Uploading CSRv configuration...")
 
 file_url = "http://{}/v2/projects/{}/files/config.iso".format(gns3_server, my_project['project_id'])
 result = requests.post(file_url, data=isoimage)
@@ -181,7 +191,7 @@ result.raise_for_status()
 
 # Configure a cloud node, a switch node, and three CSRv's, each with three interfaces
 
-print "Configuring nodes..."
+print("Configuring nodes...")
 
 url = "http://{}/v2/projects/{}/nodes".format(gns3_server, my_project['project_id'])
 
@@ -241,7 +251,7 @@ for num in [0,1,2]:
 
 # LINKS
 
-print "Configuring links..."
+print("Configuring links...")
 
 url = "http://{}/v2/projects/{}/links".format(gns3_server, my_project['project_id'])
 
@@ -289,7 +299,7 @@ for num in [0,1,2]:
 
 # START THE NODES
 
-print "Starting nodes..."
+print("Starting nodes...")
 
 project_start_url = "http://{}/v2/projects/{}/nodes/start".format(gns3_server, my_project['project_id'])
 result = requests.post(project_start_url)
@@ -308,7 +318,7 @@ result.raise_for_status()
 # scripts as 'nobody'.  Another possibility is to enhance Kea so that
 # it directly supports notifications.
 
-print "Waiting for nodes to boot..."
+print("Waiting for nodes to boot...")
 
 import time
 
