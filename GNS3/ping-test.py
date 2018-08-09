@@ -73,17 +73,12 @@ hostname R1
 
 event manager applet crypto_key authorization bypass
  event timer cron cron-entry "@reboot" maxrun 60
+ ! event timer countdown time 1 maxrun 60
  action 1.0 cli command "enable"
  action 1.1 cli command "config t"
  action 1.2 cli command "crypto key generate rsa modulus 2048"
- action 1.3 cli command "end"
- action 1.4 cli command "write mem" pattern "confirm|#"
- action 1.5 regexp "confirm" "$_cli_result"
- action 1.6 if $_regexp_result eq "1"
- action 1.7 cli command "y"
- action 1.8 end
- action 1.9 cli command "config t"
  action 2.0 cli command "no event manager applet crypto_key"
+ action 3.0 cli command "end"
 
 end
 """
@@ -98,7 +93,9 @@ config_file.close()
 
 import subprocess
 
-genisoimage_command = ["genisoimage", "-input-charset", "utf-8", "-o", "-", "-l", "-graft-points", "iosxe_config.txt={}".format(config_file.name)]
+genisoimage_command = ["genisoimage", "-input-charset", "utf-8", "-o", "-", "-l",
+                       "-graft-points", "iosxe_config.txt={}".format(config_file.name)]
+
 genisoimage_proc = subprocess.Popen(genisoimage_command, stdout=subprocess.PIPE)
 
 isoimage = genisoimage_proc.stdout.read()
@@ -227,12 +224,6 @@ for num in [0,1,2]:
 # START THE NODES
 
 print "Starting nodes..."
-
-#for node in [switch] + CSRv:
-#   node_url = "http://{}/v2/projects/{}/nodes/{}".format(gns3_server, my_project['project_id'], node['node_id'])
-#   result = requests.post(node_url + "/start")
-#   result.raise_for_status()
-
 
 project_start_url = "http://{}/v2/projects/{}/nodes/start".format(gns3_server, my_project['project_id'])
 result = requests.post(project_start_url)
