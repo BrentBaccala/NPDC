@@ -12,6 +12,58 @@ import subprocess
 
 gns3_server = "blade7:3080"
 
+# Start an HTTP server running that will receive notifications from
+# the Cisco CSRv's after they complete their boot.
+#
+# This assumes that the virtual topology will have connectivity with
+# the host running this script.
+
+import threading
+from BaseHTTPServer import BaseHTTPRequestHandler,HTTPServer
+
+class RequestHandler(BaseHTTPRequestHandler):
+    def do_POST(self):
+        print "POST"
+        self.send_response(200)
+
+server_address = ('', 0)
+httpd = HTTPServer(server_address, RequestHandler)
+
+# Catch keyboard interrupt and shutdown the httpd server that we're
+# about to start.
+#
+# from https://stackoverflow.com/a/6598286/1493790
+
+import sys
+def my_except_hook(exctype, value, traceback):
+    if exctype == KeyboardInterrupt:
+        httpd.shutdown()
+    else:
+        sys.__excepthook__(exctype, value, traceback)
+sys.excepthook = my_except_hook
+
+threading.Thread(target=httpd.serve_forever).start()
+
+# This will return the local IP address that we use to connect to the
+# GNS3 server.  We need this to tell the Cisco CSRv's how to connect
+# back to us, and if we've got multiple interfaces, multiple DNS
+# names, and multiple IP addresses, it's a bit unclear which one to
+# use.
+#
+# from https://stackoverflow.com/a/28950776/1493790
+
+import socket
+
+def get_ip():
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    # doesn't even have to be reachable
+    s.connect(('blade7', 1))
+    IP = s.getsockname()[0]
+    s.close()
+    return IP
+
+notification_url = "http://{}:{}/".format(get_ip(), httpd.server_port)
+
 # Create a new GNS3 project called 'ping-test'
 #
 # The only required field for a new GNS3 project is 'name'
@@ -79,9 +131,10 @@ event manager applet crypto_key authorization bypass
  action 1.2 cli command "crypto key generate rsa modulus 2048"
  action 2.0 cli command "no event manager applet crypto_key"
  action 3.0 cli command "end"
+ action 4.0 cli command "copy run {}"
 
 end
-"""
+""".format(notification_url)
 
 import os
 import tempfile
