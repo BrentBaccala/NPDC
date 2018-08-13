@@ -1,7 +1,22 @@
 #!/usr/bin/python3
 #
-# Script to fire up a 3-node GNS3 topology, configure basic
-# routing between the nodes, and test ping connectivity.
+# Script to fire up a 3-node GNS3 topology, load configurations on the
+# routers, notify the script when the routers have booted, and test
+# ping connectivity.
+#
+#                  +------+-------------------------------+
+#                  | host |           GNS3                |
+#  +-----------+   |      |                      times 3  |
+#  |           |   |   br0| +-----------+     +----------+|
+#  | ping-test |---|------|-|  Virtual  |-----|   Cisco  ||
+#  |           |   |      | |   Switch  |     | CSRv 1000||
+#  +-----------+   |      | +-----------+     +----------+|
+#                  +------+-------------------------------+
+#
+# The script depends on having IP connectivity with the virtual
+# routers.  GNS3 connects the virtual routers to an interface on the
+# host (br0) that should have IP connectivity and a DHCP server
+# running on it.
 
 import requests
 import json
@@ -16,6 +31,7 @@ from http.server import BaseHTTPRequestHandler,HTTPServer
 import napalm
 
 gns3_server = "blade7:3080"
+host_interface = "br0"
 
 # Start an HTTP server running that will receive notifications from
 # the Cisco CSRv's after they complete their boot.
@@ -83,7 +99,8 @@ def get_ip():
     s.close()
     return IP
 
-notification_url = "http://{}:{}/".format(get_ip(), httpd.server_port)
+script_ip = get_ip()
+notification_url = "http://{}:{}/".format(script_ip, httpd.server_port)
 
 # Create a new GNS3 project called 'ping-test'
 #
@@ -135,7 +152,7 @@ line vty 0 4
 
 username cisco priv 15 password cisco
 
-ip route 0.0.0.0 0.0.0.0 192.168.57.1
+ip route 0.0.0.0 0.0.0.0 http
 
 ! A hostname is required for ssh to work
 
@@ -145,19 +162,14 @@ hostname R1
 
 file prompt quiet
 
-! This doesn't work: crypto key generate rsa modulus 768
-! ...so do this instead
-
 ! from https://community.cisco.com/t5/vpn-and-anyconnect/enabling-ssh-with-a-startup-config-or-similar/td-p/1636781
-
-! event manager applet crypto_key authorization bypass
-!  event timer cron cron-entry "@reboot" maxrun 60
-!  ! event timer countdown time 1 maxrun 60
-!  action 1.0 cli command "enable"
-!  action 1.1 cli command "config t"
-!  action 1.2 cli command "crypto key generate rsa modulus 768"
-!  action 2.0 cli command "no event manager applet crypto_key"
-!  action 3.0 cli command "end"
+!
+! This command doesn't work in the configuration file:
+!     crypto key generate rsa modulus 768
+! ...so run it using an EEM applet instead.
+!
+! Experience has shown that it doesn't work right away on boot,
+! so introduce a five second delay before running it.
 
 ! from http://wiki.nil.com/Detect_DHCP_client_address_change_with_EEM_applet
 !
@@ -165,16 +177,22 @@ file prompt quiet
 !  event detector detects all additions of connected routes (the
 !  0.0.0.0/0 mask indicates we want to catch all changes regardless of
 !  the actual IP prefix)."
+!
+! We use this logic to make sure we've got a DHCP address before
+! trying to handshake with the main script.  I also run the ssh key
+! generation at this time, because I want to make sure that both
+! events have happened (DHCP configuration and ssh key generation)
+! before notifying the script that we're ready.
 
 event manager applet send_notification authorization bypass
  event routing network 0.0.0.0/0 type add protocol connected ge 1
- action 1.0 cli command "enable"
- action 1.1 cli command "config t"
- action 1.2 wait 5
- action 1.3 cli command "crypto key generate rsa modulus 768"
- action 2.0 cli command "no event manager applet send_notification"
- action 2.1 cli command "end"
- action 2.2 cli command "copy run {0}"
+ action 10 cli command "enable"
+ action 20 cli command "config t"
+ action 30 cli command "no event manager applet send_notification"
+ action 40 wait 5
+ action 50 cli command "crypto key generate rsa modulus 768"
+ action 60 cli command "end"
+ action 70 cli command "copy run {0}"
 
 end
 """.format(notification_url)
@@ -275,9 +293,9 @@ print("Configuring links...")
 
 url = "http://{}/v2/projects/{}/links".format(gns3_server, my_project['project_id'])
 
-# find 'br0' port in cloud object
+# find host_interface ('br0') port in cloud object
 
-br0 = [port for port in cloud['ports'] if port['short_name'] == 'br0'][0]
+br0 = [port for port in cloud['ports'] if port['short_name'] == host_interface][0]
 
 # Link the cloud to the switch
 
@@ -327,7 +345,8 @@ result.raise_for_status()
 
 # WAIT FOR NODES TO BOOT
 #
-# Ideally, we'd like the DHCP server to support notifications of a new client
+# One way to do this if is the DHCP servers supports notifications of
+# new clients.
 #
 # The ISC Kea server probably can do that, in a somewhat roundabout
 # way.  It can use MySQL as a backend, and you can set a MySQL trigger
@@ -337,12 +356,18 @@ result.raise_for_status()
 # delete the entire database.  Or configure an extension to run the
 # scripts as 'nobody'.  Another possibility is to enhance Kea so that
 # it directly supports notifications.
+#
+# Instead, I use the EEM applet on the router to send the notification.
+# This has the advantage of ensuring that the router has generated an
+# RSA key and can receive SSH connections.
 
 print("Waiting for nodes to boot...")
 
 with router_report_cv:
     while len(routers_reported) < 3:
         router_report_cv.wait()
+
+# TOPOLOGY UP AND RUNNING
 
 print("Running ping test...")
 
@@ -351,8 +376,10 @@ dev = napalm.get_network_driver('ios')
 for hostname in routers_reported:
     device = dev(hostname=hostname, username='cisco', password='cisco')
     device.open()
-    print(json.dumps(device.ping('192.168.57.1'), indent=4))
+    print(json.dumps(device.ping(script_ip), indent=4))
 
 # Shutdown the http server thread, break down the GNS3 project, and exit
+
+print("Exiting...")
 
 httpd.shutdown()
