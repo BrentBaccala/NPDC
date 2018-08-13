@@ -10,6 +10,11 @@ import math
 
 import subprocess
 
+import threading
+from http.server import BaseHTTPRequestHandler,HTTPServer
+
+import napalm
+
 gns3_server = "blade7:3080"
 
 # Start an HTTP server running that will receive notifications from
@@ -17,17 +22,27 @@ gns3_server = "blade7:3080"
 #
 # This assumes that the virtual topology will have connectivity with
 # the host running this script.
+#
+# We keep a set of which routers have reported in, and a condition
+# variable is used to signal our main thread when they report.
 
-import threading
-from http.server import BaseHTTPRequestHandler,HTTPServer
+routers_reported = set()
+router_report_cv = threading.Condition()
 
 class RequestHandler(BaseHTTPRequestHandler):
     def do_PUT(self):
         length = self.headers['Content-Length']
         self.send_response_only(100)
         self.end_headers()
+
         content = self.rfile.read(int(length))
         # print(content.decode('utf-8'))
+
+        with router_report_cv:
+            if not self.client_address[0] in routers_reported:
+                routers_reported.add(self.client_address[0])
+                router_report_cv.notify()
+
         self.send_response(200)
         self.end_headers()
 
@@ -40,8 +55,11 @@ httpd = HTTPServer(server_address, RequestHandler)
 # from https://stackoverflow.com/a/6598286/1493790
 
 import sys
+import pdb
+
 def my_except_hook(exctype, value, traceback):
     httpd.shutdown()
+    pdb.set_trace()
     sys.__excepthook__(exctype, value, traceback)
 sys.excepthook = my_except_hook
 
@@ -132,14 +150,14 @@ file prompt quiet
 
 ! from https://community.cisco.com/t5/vpn-and-anyconnect/enabling-ssh-with-a-startup-config-or-similar/td-p/1636781
 
-event manager applet crypto_key authorization bypass
- event timer cron cron-entry "@reboot" maxrun 60
- ! event timer countdown time 1 maxrun 60
- action 1.0 cli command "enable"
- action 1.1 cli command "config t"
- action 1.2 cli command "crypto key generate rsa modulus 2048"
- action 2.0 cli command "no event manager applet crypto_key"
- action 3.0 cli command "end"
+! event manager applet crypto_key authorization bypass
+!  event timer cron cron-entry "@reboot" maxrun 60
+!  ! event timer countdown time 1 maxrun 60
+!  action 1.0 cli command "enable"
+!  action 1.1 cli command "config t"
+!  action 1.2 cli command "crypto key generate rsa modulus 768"
+!  action 2.0 cli command "no event manager applet crypto_key"
+!  action 3.0 cli command "end"
 
 ! from http://wiki.nil.com/Detect_DHCP_client_address_change_with_EEM_applet
 !
@@ -151,7 +169,12 @@ event manager applet crypto_key authorization bypass
 event manager applet send_notification authorization bypass
  event routing network 0.0.0.0/0 type add protocol connected ge 1
  action 1.0 cli command "enable"
- action 2.0 cli command "copy run {0}"
+ action 1.1 cli command "config t"
+ action 1.2 wait 5
+ action 1.3 cli command "crypto key generate rsa modulus 768"
+ action 2.0 cli command "no event manager applet send_notification"
+ action 2.1 cli command "end"
+ action 2.2 cli command "copy run {0}"
 
 end
 """.format(notification_url)
@@ -317,7 +340,19 @@ result.raise_for_status()
 
 print("Waiting for nodes to boot...")
 
-import time
+with router_report_cv:
+    while len(routers_reported) < 3:
+        router_report_cv.wait()
 
-while True:
-   time.sleep(10)
+print("Running ping test...")
+
+dev = napalm.get_network_driver('ios')
+
+for hostname in routers_reported:
+    device = dev(hostname=hostname, username='cisco', password='cisco')
+    device.open()
+    print(json.dumps(device.ping('192.168.57.1'), indent=4))
+
+# Shutdown the http server thread, break down the GNS3 project, and exit
+
+httpd.shutdown()
