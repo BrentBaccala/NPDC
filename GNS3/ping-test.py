@@ -1,12 +1,12 @@
 #!/usr/bin/python3
 #
-# Script to fire up a 3-node GNS3 topology, load configurations on the
-# routers, notify the script when the routers have booted, and test
-# ping connectivity.
+# Script to fire up a GNS3 topology with a Cisco CSRv 1000, load
+# a configuration on the router, notify the script when the router
+# has booted, and test ping connectivity.
 #
 #                  +------+-------------------------------+
 #                  | host |           GNS3                |
-#  +-----------+   |      |                      times 3  |
+#  +-----------+   |      |                               |
 #  |           |   |   br0| +-----------+     +----------+|
 #  | ping-test |---|------|-|  Virtual  |-----|   Cisco  ||
 #  |           |   |      | |   Switch  |     | CSRv 1000||
@@ -14,7 +14,7 @@
 #                  +------+-------------------------------+
 #
 # The script depends on having IP connectivity with the virtual
-# routers.  GNS3 connects the virtual routers to an interface on the
+# router.  GNS3 connects the virtual routers to an interface on the
 # host (br0) that should have IP connectivity and a DHCP server
 # running on it.
 
@@ -30,8 +30,33 @@ from http.server import BaseHTTPRequestHandler,HTTPServer
 
 import napalm
 
+# Don't use localhost for gns3_server, even if the server is running
+# on the same host as the script, since we use gns3_server in the next
+# section of code to determine which of our IP addresses we should
+# pass to the router, and we surely don't want 127.0.0.1.
+
 gns3_server = "blade7:3080"
 host_interface = "br0"
+
+# This will return the local IP address that the script uses to
+# connect to the GNS3 server.  We need this to tell the Cisco CSRv
+# how to connect back to the script, and if we've got multiple
+# interfaces, multiple DNS names, and multiple IP addresses, it's a
+# bit unclear which one to use.
+#
+# from https://stackoverflow.com/a/28950776/1493790
+
+import socket
+
+def get_ip():
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    # doesn't even have to be reachable
+    s.connect((gns3_server.split(':')[0], 1))
+    IP = s.getsockname()[0]
+    s.close()
+    return IP
+
+script_ip = get_ip()
 
 # Start an HTTP server running that will receive notifications from
 # the Cisco CSRv's after they complete their boot.
@@ -65,6 +90,8 @@ class RequestHandler(BaseHTTPRequestHandler):
 server_address = ('', 0)
 httpd = HTTPServer(server_address, RequestHandler)
 
+notification_url = "http://{}:{}/".format(script_ip, httpd.server_port)
+
 # Catch uncaught exceptions and shutdown the httpd server that we're
 # about to start.
 #
@@ -80,27 +107,6 @@ def my_except_hook(exctype, value, traceback):
 sys.excepthook = my_except_hook
 
 threading.Thread(target=httpd.serve_forever).start()
-
-# This will return the local IP address that we use to connect to the
-# GNS3 server.  We need this to tell the Cisco CSRv's how to connect
-# back to us, and if we've got multiple interfaces, multiple DNS
-# names, and multiple IP addresses, it's a bit unclear which one to
-# use.
-#
-# from https://stackoverflow.com/a/28950776/1493790
-
-import socket
-
-def get_ip():
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    # doesn't even have to be reachable
-    s.connect(('blade7', 1))
-    IP = s.getsockname()[0]
-    s.close()
-    return IP
-
-script_ip = get_ip()
-notification_url = "http://{}:{}/".format(script_ip, httpd.server_port)
 
 # Create a new GNS3 project called 'ping-test'
 #
@@ -222,12 +228,7 @@ file_url = "http://{}/v2/projects/{}/files/config.iso".format(gns3_server, my_pr
 result = requests.post(file_url, data=isoimage)
 result.raise_for_status()
 
-#for num in [0,1,2]:
-#   file_url = "http://{}/v2/projects/{}/files/config-{}.iso".format(gns3_server, my_project['project_id'], num)
-#   result = requests.post(file_url, data=isoimage)
-#   result.raise_for_status()
-
-# Configure a cloud node, a switch node, and three CSRv's, each with three interfaces
+# Configure a cloud node, a switch node, and a CSRv with one interface
 
 print("Configuring nodes...")
 
@@ -261,13 +262,12 @@ switch_result = requests.post(url, data=json.dumps(switch_node))
 switch_result.raise_for_status()
 switch = switch_result.json()
 
-def CSRv_node(num):
-    return {
+CSRv_node = {
         "compute_id": "local",
-        "name": "CiscoCSR1000v16.7.1(a)-{}".format(num),
+        "name": "CiscoCSR1000v16.7.1(a)",
         "node_type": "qemu",
         "properties": {
-            "adapters": 3,
+            "adapters": 1,
             "adapter_type" : "virtio-net-pci",
             "hda_disk_image": "csr1000v-universalk9.16.07.01-serial.qcow2",
             "cdrom_image" : "config.iso",
@@ -276,16 +276,13 @@ def CSRv_node(num):
         },
 
         "symbol": ":/symbols/router.svg",
-        "x" : int(200 * math.cos((num-1) * math.pi * 2 / 3)),
-        "y" : int(200 * math.sin((num-1) * math.pi * 2 / 3)),
+        "x" : 300,
+        "y" : 0
     }
 
-CSRv = [None, None, None]
-
-for num in [0,1,2]:
-    result = requests.post(url, data=json.dumps(CSRv_node(num)))
-    result.raise_for_status()
-    CSRv[num] = result.json()
+result = requests.post(url, data=json.dumps(CSRv_node))
+result.raise_for_status()
+CSRv = result.json()
 
 # LINKS
 
@@ -309,31 +306,17 @@ link_obj = {'nodes' : [{'adapter_number' : br0['adapter_number'],
 result = requests.post(url, data=json.dumps(link_obj))
 result.raise_for_status()
 
-# Link the first interface of each CSRv to the switch
+# Link the first interface of the CSRv to the switch
 
-for num in [0,1,2]:
-   link_obj = {'nodes' : [{'adapter_number' : 0,
-                           'port_number' : 0,
-                           'node_id' : CSRv[num]['node_id']},
-                          {'adapter_number' : 0,
-                           'port_number' : num + 1,
-                           'node_id' : switch['node_id']}]}
+link_obj = {'nodes' : [{'adapter_number' : 0,
+                        'port_number' : 0,
+                        'node_id' : CSRv['node_id']},
+                       {'adapter_number' : 0,
+                        'port_number' : 1,
+                        'node_id' : switch['node_id']}]}
 
-   result = requests.post(url, data=json.dumps(link_obj))
-   result.raise_for_status()
-
-# Link the second and third interfaces of each CSRv together in a ring
-
-for num in [0,1,2]:
-   link_obj = {'nodes' : [{'adapter_number' : 1,
-                           'port_number' : 0,
-                           'node_id' : CSRv[num]['node_id']},
-                          {'adapter_number' : 2,
-                           'port_number' : 0,
-                           'node_id' : CSRv[(num+1)%3]['node_id']}]}
-
-   result = requests.post(url, data=json.dumps(link_obj))
-   result.raise_for_status()
+result = requests.post(url, data=json.dumps(link_obj))
+result.raise_for_status()
 
 # START THE NODES
 
@@ -364,7 +347,7 @@ result.raise_for_status()
 print("Waiting for nodes to boot...")
 
 with router_report_cv:
-    while len(routers_reported) < 3:
+    while len(routers_reported) == 0:
         router_report_cv.wait()
 
 # TOPOLOGY UP AND RUNNING
