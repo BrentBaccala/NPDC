@@ -256,6 +256,7 @@ switch_node = {
         "symbol": ":/symbols/ethernet_switch.svg",
         "x" : 0,
         "y" : 0,
+        "console_type": "telnet",
     }
 
 switch_result = requests.post(url, data=json.dumps(switch_node))
