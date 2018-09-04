@@ -12,6 +12,7 @@
 # Instead, I got the answer I wanted from here:
 #   https://communities.cisco.com/thread/84717
 
+import sys
 
 from getpass import *
 from ucsmsdk import *
@@ -27,9 +28,14 @@ handle = UcsHandle('172.18.0.100', 'admin', password)
 
 handle.login()
 
+# If the user specified an argument, we expect it to be a number
+# according to our local service profile naming scheme.  Otherwise,
+# just do blade 7 by default.
 
-
-dn1 = 'org-root/ls-iSCSI07'
+if len(sys.argv) == 2:
+    dn1 = 'org-root/ls-iSCSI0{}'.format(sys.argv[1])
+else:
+    dn1 = 'org-root/ls-iSCSI07'
 
 mo1 = handle.query_dn(dn1)
 
@@ -47,7 +53,7 @@ else:
     #
     # 'up' doesn't seem to boot the server; you need to use 'admin-up'
 
-    dn2 = 'org-root/ls-iSCSI07/power'
+    dn2 = dn1 + '/power'
 
     mo2 = handle.query_dn(dn2)
 
