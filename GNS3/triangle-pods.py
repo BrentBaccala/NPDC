@@ -44,22 +44,22 @@ import napalm
 # section of code to determine which of our IP addresses we should
 # pass to the router, and we surely don't want 127.0.0.1.
 
-gns3_server = "blade7:3080"
+gns3_server = "blade6:3080"
 host_interface = "br0"
 
 # The CSRv's
 
 npods = 5
 
-hostnames = ["{}{}".format(pod, router) for pod in range(1,npods+1) for router in ["a", "b", "c"]]
+hostnames = ["{}{}".format(pod+5, router) for pod in range(1,npods+1) for router in ["a", "b", "c"]]
 
 hostname_x = {}
 hostname_y = {}
 
 for pod in range(1,npods+1):
     for router in ["a", "b", "c"]:
-        hostname_x["{}{}".format(pod, router)] = -int(300 * math.cos(pod * 2*math.pi / (npods+1)))
-        hostname_y["{}{}".format(pod, router)] = int(300 * math.sin(pod * 2*math.pi / (npods+1)))
+        hostname_x["{}{}".format(pod+5, router)] = -int(300 * math.cos(pod * 2*math.pi / (npods+1)))
+        hostname_y["{}{}".format(pod+5, router)] = int(300 * math.sin(pod * 2*math.pi / (npods+1)))
 
 # This will return the local IP address that the script uses to
 # connect to the GNS3 server.  We need this to tell the Cisco CSRv
@@ -376,7 +376,7 @@ for hostname in hostnames:
 
 # Link the second and third interfaces of each CSRv pair together
 
-for pod in range(1, npods+1):
+for pod in range(6, npods+6):
     for (i,j) in [('a', 'b'), ('b', 'c'), ('c', 'a')]:
         router1 = "{}{}".format(pod, i)
         router2 = "{}{}".format(pod, j)
