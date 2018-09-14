@@ -49,7 +49,7 @@ host_interface = "br0"
 
 # The CSRv's
 
-npods = 2
+npods = 5
 
 hostnames = ["{}{}".format(pod, router) for pod in range(1,npods+1) for router in ["a", "b", "c"]]
 
@@ -279,9 +279,10 @@ cloud_result = requests.post(url, data=json.dumps(cloud_node))
 cloud_result.raise_for_status()
 cloud = cloud_result.json()
 
-switch_node = {
+def switch_node(n):
+    return {
         "compute_id": "local",
-        "name": "Switch",
+        "name": "Switch{}".format(n),
         "node_type": "ethernet_switch",
 
         "symbol": ":/symbols/ethernet_switch.svg",
@@ -290,9 +291,12 @@ switch_node = {
         "console_type" : "telnet",
     }
 
-switch_result = requests.post(url, data=json.dumps(switch_node))
-switch_result.raise_for_status()
-switch = switch_result.json()
+switch = []
+switches = 6
+for n in range(0,switches):
+    switch_result = requests.post(url, data=json.dumps(switch_node(n)))
+    switch_result.raise_for_status()
+    switch.append(switch_result.json())
 
 def CSRv_node(hostname):
     return {
@@ -330,28 +334,42 @@ url = "http://{}/v2/projects/{}/links".format(gns3_server, my_project['project_i
 
 br0 = [port for port in cloud['ports'] if port['short_name'] == host_interface][0]
 
-# Link the cloud to the switch
+# Link the cloud to switch 0
 
 link_obj = {'nodes' : [{'adapter_number' : br0['adapter_number'],
                         'port_number' : br0['port_number'],
                         'node_id' : cloud['node_id']},
                        {'adapter_number' : 0,
                         'port_number' : 0,
-                        'node_id' : switch['node_id']}]}
+                        'node_id' : switch[0]['node_id']}]}
 
 result = requests.post(url, data=json.dumps(link_obj))
 result.raise_for_status()
+
+for n in range(1,switches):
+    link_obj = {'nodes' : [{'adapter_number' : 0,
+                            'port_number' : n,
+                            'node_id' : switch[0]['node_id']},
+                           {'adapter_number' : 0,
+                            'port_number' : 0,
+                            'node_id' : switch[n]['node_id']}]}
+
+    result = requests.post(url, data=json.dumps(link_obj))
+    result.raise_for_status()
 
 # Link the first interface of each CSRv to the switch
 
 for hostname in hostnames:
 
+    n = hostnames.index(hostname)
+    switchnum = int(n / 6) + 1
+    portnum = n % 6 + 1
     link_obj = {'nodes' : [{'adapter_number' : 0,
                             'port_number' : 0,
                             'node_id' : CSRv[hostname]['node_id']},
                            {'adapter_number' : 0,
-                            'port_number' : hostnames.index(hostname) + 1,
-                            'node_id' : switch['node_id']}]}
+                            'port_number' : portnum,
+                            'node_id' : switch[switchnum]['node_id']}]}
 
     result = requests.post(url, data=json.dumps(link_obj))
     result.raise_for_status()
