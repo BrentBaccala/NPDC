@@ -51,15 +51,18 @@ host_interface = "br0"
 
 npods = 5
 
-hostnames = ["{}{}".format(pod, router) for pod in range(1,npods+1) for router in ["a", "b", "c"]]
+def hostname(pod, router):
+    return "{}{}".format(pod, router)
+
+hostnames = [hostname(pod, router) for pod in range(1,npods+1) for router in ["a", "b", "c"]]
 
 hostname_x = {}
 hostname_y = {}
 
 for pod in range(1,npods+1):
     for router in ["a", "b", "c"]:
-        hostname_x["{}{}".format(pod, router)] = -int(300 * math.cos(pod * 2*math.pi / (npods+1)))
-        hostname_y["{}{}".format(pod, router)] = int(300 * math.sin(pod * 2*math.pi / (npods+1)))
+        hostname_x[hostname(pod, router)] = -int(300 * math.cos(pod * 2*math.pi / (npods+1)))
+        hostname_y[hostname(pod, router)] = int(300 * math.sin(pod * 2*math.pi / (npods+1)))
 
 # This will return the local IP address that the script uses to
 # connect to the GNS3 server.  We need this to tell the Cisco CSRv
@@ -292,7 +295,8 @@ def switch_node(n):
     }
 
 switch = []
-switches = 6
+switches = 4
+
 for n in range(0,switches):
     switch_result = requests.post(url, data=json.dumps(switch_node(n)))
     switch_result.raise_for_status()
@@ -346,6 +350,8 @@ link_obj = {'nodes' : [{'adapter_number' : br0['adapter_number'],
 result = requests.post(url, data=json.dumps(link_obj))
 result.raise_for_status()
 
+# Link switches 1-n to switch 0
+
 for n in range(1,switches):
     link_obj = {'nodes' : [{'adapter_number' : 0,
                             'port_number' : n,
@@ -357,7 +363,7 @@ for n in range(1,switches):
     result = requests.post(url, data=json.dumps(link_obj))
     result.raise_for_status()
 
-# Link the first interface of each CSRv to the switch
+# Link the first interface of each CSRv to a switch
 
 for hostname in hostnames:
 
@@ -378,8 +384,8 @@ for hostname in hostnames:
 
 for pod in range(1, npods+1):
     for (i,j) in [('a', 'b'), ('b', 'c'), ('c', 'a')]:
-        router1 = "{}{}".format(pod, i)
-        router2 = "{}{}".format(pod, j)
+        router1 = hostname(pod, i)
+        router2 = hostname(pod, j)
 
         link_obj = {'nodes' : [{'adapter_number' : 1,
                                 'port_number' : 0,
