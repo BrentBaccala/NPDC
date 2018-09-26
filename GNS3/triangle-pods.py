@@ -51,18 +51,18 @@ host_interface = "br0"
 
 npods = 5
 
-def hostname(pod, router):
+def mkhostname(pod, router):
     return "{}{}".format(pod, router)
 
-hostnames = [hostname(pod, router) for pod in range(1,npods+1) for router in ["a", "b", "c"]]
+hostnames = [mkhostname(pod, router) for pod in range(1,npods+1) for router in ["a", "b", "c"]]
 
 hostname_x = {}
 hostname_y = {}
 
 for pod in range(1,npods+1):
     for router in ["a", "b", "c"]:
-        hostname_x[hostname(pod, router)] = -int(300 * math.cos(pod * 2*math.pi / (npods+1)))
-        hostname_y[hostname(pod, router)] = int(300 * math.sin(pod * 2*math.pi / (npods+1)))
+        hostname_x[mkhostname(pod, router)] = -int(300 * math.cos(pod * 2*math.pi / (npods+1)))
+        hostname_y[mkhostname(pod, router)] = int(300 * math.sin(pod * 2*math.pi / (npods+1)))
 
 # This will return the local IP address that the script uses to
 # connect to the GNS3 server.  We need this to tell the Cisco CSRv
@@ -384,8 +384,8 @@ for hostname in hostnames:
 
 for pod in range(1, npods+1):
     for (i,j) in [('a', 'b'), ('b', 'c'), ('c', 'a')]:
-        router1 = hostname(pod, i)
-        router2 = hostname(pod, j)
+        router1 = mkhostname(pod, i)
+        router2 = mkhostname(pod, j)
 
         link_obj = {'nodes' : [{'adapter_number' : 1,
                                 'port_number' : 0,
