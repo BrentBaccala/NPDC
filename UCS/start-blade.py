@@ -22,20 +22,20 @@ from ucsmsdk.utils import ucsguilaunch
 from ucsmsdk.utils import converttopython
 
 
+# We expect the user to specify the blade number as an argument,
+# according to our local service profile naming scheme.
+
+if len(sys.argv) == 2:
+    dn1 = 'org-root/ls-Local0{}'.format(sys.argv[1])
+else:
+    print("Which blade do you wish to start?")
+    exit()
+
 password = getpass('UCS Password: ')
 
 handle = UcsHandle('172.18.0.100', 'admin', password)
 
 handle.login()
-
-# If the user specified an argument, we expect it to be a number
-# according to our local service profile naming scheme.  Otherwise,
-# just do blade 7 by default.
-
-if len(sys.argv) == 2:
-    dn1 = 'org-root/ls-iSCSI0{}'.format(sys.argv[1])
-else:
-    dn1 = 'org-root/ls-iSCSI07'
 
 mo1 = handle.query_dn(dn1)
 
