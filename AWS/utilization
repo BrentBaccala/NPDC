@@ -26,7 +26,7 @@ metric="CPUUtilization"
 # Once we've picked one (CPUUtilization), we need to figure out what
 # namespace it's in.
 
-namespace=$(aws $@ cloudwatch list-metrics --query "Metrics[? MetricName=='$metric'].Namespace" --output text)
+namespace=$(aws $@ cloudwatch list-metrics --query "Metrics[? MetricName=='$metric'].Namespace | [0]" --output text)
 
 # We query the metric to find its available "dimensions", in this case
 # the only "dimension" is "InstanceId", and it tells us what values
