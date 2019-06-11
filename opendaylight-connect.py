@@ -17,12 +17,14 @@ headers = {'Content-Type': 'application/xml',
 
 # Copied from https://docs.opendaylight.org/en/stable-oxygen/user-guide/netconf-user-guide.html
 
-url2 = "http://blade8:8181/restconf/config/network-topology:network-topology/topology/topology-netconf/node/csr3"
+nodes = {'csr4' : {'node' : 'csr4', 'host': '192.168.58.130'}}
+
+url2 = "http://blade8:8181/restconf/config/network-topology:network-topology/topology/topology-netconf/node/{}"
 
 payload2 = '''
 <node xmlns="urn:TBD:params:xml:ns:yang:network-topology">
-  <node-id>csr3</node-id>
-  <host xmlns="urn:opendaylight:netconf-node-topology">192.168.58.124</host>
+  <node-id>{node}</node-id>
+  <host xmlns="urn:opendaylight:netconf-node-topology">{host}</host>
   <port xmlns="urn:opendaylight:netconf-node-topology">830</port>
   <username xmlns="urn:opendaylight:netconf-node-topology">admin</username>
   <password xmlns="urn:opendaylight:netconf-node-topology">admin</password>
@@ -38,6 +40,7 @@ payload2 = '''
 </node>
 '''
 
-response = requests.put(url2, data=payload2, verify=False, auth=auth, headers=headers)
+for k,v in nodes.items():
+    response = requests.put(url2.format(k), data=payload2.format(**v), verify=False, auth=auth, headers=headers)
 
 print(response.text)
