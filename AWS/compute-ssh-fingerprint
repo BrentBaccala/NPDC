@@ -1,0 +1,1 @@
+openssl pkey -in ~/.ssh/id_rsa -pubout -outform DER | openssl md5 -c
