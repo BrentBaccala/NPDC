@@ -31,6 +31,6 @@ done
 switchstr=${switches[*]}
 
 # Queries are separated by commas
-IFS=,
+#IFS=,
 
 aws $switchstr ec2 describe-instances --query="Reservations[].Instances[].{${queries[*]}}"
