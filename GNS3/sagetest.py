@@ -91,16 +91,79 @@ first_unoccupied_adapter = next(i for i, e in enumerate(sorted(occupied_adapter_
 
 print("Building cloud-init configuration...")
 
-meta_data = """
-instance-id: ubuntu
-local-hostname: ubuntu
+meta_data = """instance-id: ubuntu
+local-hostname: sagetest
 """
 
-user_data = """
-#cloud-config
-password: ubuntu
-chpasswd: { expire: False }
-ssh_pwauth: True
+user_data = """#cloud-config
+ssh_deletekeys: true
+ssh_keys:
+    rsa_private: |
+        -----BEGIN OPENSSH PRIVATE KEY-----
+        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
+        -----END OPENSSH PRIVATE KEY-----
+    rsa_public: ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQDA42U2T3CFYfSh4hlJg69bH37njgXT5RSrzWH1W93BhGvLhcsV5JSMF05krtWAnzinlcoEL7dQIQeaTS4Y9bmHlERR886RGnuIZWDcM+GZUCubCWyw2ogFolqQm55QaCjti9KMHv2CHkNFPE/nVqiY8iRvQ33zP+gDb76BV8+Mbs+TWJmj7kJXiwHcnePW0F0CYsJYaIDy4l+tmhYo2JrHWD5fIiGCgMCMPNehvbGTSJMBCJbehXdVZxew1HSvL6WbPezVD7Ffvs1Fq+fGtvLlLpABtuUH4CqF4b33fNp4lNZAo3g+WPy4rs5ylu49ItdcSc9hC2t3kJcXEvPIbwq9NTqbUCA3zO9mvrBzP/Io5ExZbhkC81FFilzh/v7vmt6NF0FnYuzRhfItc2pXfmcrEsiRLW9uAsojIV4UQlGf6bwHYHXvKV+DlRd4YAtNxzqcMY2V8ZsYyupBKrseD3l6OIhVCp2uKSiJKS+LYWvSheIUlykzJhaaNNMQevgVzh0= root@sagetest
+    dsa_private: |
+        -----BEGIN OPENSSH PRIVATE KEY-----
+        b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAABsgAAAAdzc2gtZH
+        NzAAAAgQDjoigEAiHMvZ4YRfvy4a3yJLNtSa4wkJEUZi046hpbhouxhWyU9FYwKp0PjvPc
+        MnNtOPeulhkxzGLucm43tfSTAKDJ2QpKr3kIqa6VkA2lBJtw8kXy+/CipXMyPCSe76nTTV
+        VhPX5EBIEvv8FA9BIOg7BvTjuIrc8vHHUnXssW/QAAABUAyRtV+XTnjaKYBS6AUGLP+L8O
+        ogkAAACBANhmnXcpCJr75wOAV7I7ru3ndSU+CrWWYncd/aqbbGeo8oSddSzmpPDbA//gg9
+        SdPmSr7CZu2HQrnq25BLk9xn6s8hwMt9pJmNWBVoUki8LI3WMyxA0srP+ODf+wzhoGShuH
+        QFW/e4savtbjJ9pneJZLTCg+sct1jshRBa0+zV5fAAAAgHdm68TQdPobVXidgY2TQNcAt+
+        vL01u7bTBUtZSqZe9JW9DFLQSdBxTCuPNfsO6gXe9Ej9NP60dNwlLaE8KYFpw2Df9zaf0Q
+        ntVOp0AC/dQbRblHTnZBwdKVJEAmmRfZj+dUV64DNrCWjEjb22cS26ALxamIZtNWltULhp
+        dUhwMpAAAB6G0O9Y1tDvWNAAAAB3NzaC1kc3MAAACBAOOiKAQCIcy9nhhF+/LhrfIks21J
+        rjCQkRRmLTjqGluGi7GFbJT0VjAqnQ+O89wyc204966WGTHMYu5ybje19JMAoMnZCkqveQ
+        iprpWQDaUEm3DyRfL78KKlczI8JJ7vqdNNVWE9fkQEgS+/wUD0Eg6DsG9OO4itzy8cdSde
+        yxb9AAAAFQDJG1X5dOeNopgFLoBQYs/4vw6iCQAAAIEA2GaddykImvvnA4BXsjuu7ed1JT
+        4KtZZidx39qptsZ6jyhJ11LOak8NsD/+CD1J0+ZKvsJm7YdCuerbkEuT3GfqzyHAy32kmY
+        1YFWhSSLwsjdYzLEDSys/44N/7DOGgZKG4dAVb97ixq+1uMn2md4lktMKD6xy3WOyFEFrT
+        7NXl8AAACAd2brxNB0+htVeJ2BjZNA1wC368vTW7ttMFS1lKpl70lb0MUtBJ0HFMK481+w
+        7qBd70SP00/rR03CUtoTwpgWnDYN/3Np/RCe1U6nQAL91BtFuUdOdkHB0pUkQCaZF9mP51
+        RXrgM2sJaMSNvbZxLboAvFqYhm01aW1QuGl1SHAykAAAAUBgETgtOt3EM9TOubDQvflgPT
+        uPcAAAANcm9vdEBzYWdldGVzdAECAwQF
+        -----END OPENSSH PRIVATE KEY-----
+    dsa_public: ssh-dss AAAAB3NzaC1kc3MAAACBAOOiKAQCIcy9nhhF+/LhrfIks21JrjCQkRRmLTjqGluGi7GFbJT0VjAqnQ+O89wyc204966WGTHMYu5ybje19JMAoMnZCkqveQiprpWQDaUEm3DyRfL78KKlczI8JJ7vqdNNVWE9fkQEgS+/wUD0Eg6DsG9OO4itzy8cdSdeyxb9AAAAFQDJG1X5dOeNopgFLoBQYs/4vw6iCQAAAIEA2GaddykImvvnA4BXsjuu7ed1JT4KtZZidx39qptsZ6jyhJ11LOak8NsD/+CD1J0+ZKvsJm7YdCuerbkEuT3GfqzyHAy32kmY1YFWhSSLwsjdYzLEDSys/44N/7DOGgZKG4dAVb97ixq+1uMn2md4lktMKD6xy3WOyFEFrT7NXl8AAACAd2brxNB0+htVeJ2BjZNA1wC368vTW7ttMFS1lKpl70lb0MUtBJ0HFMK481+w7qBd70SP00/rR03CUtoTwpgWnDYN/3Np/RCe1U6nQAL91BtFuUdOdkHB0pUkQCaZF9mP51RXrgM2sJaMSNvbZxLboAvFqYhm01aW1QuGl1SHAyk= root@sagetest
+
+ssh_authorized_keys:
+    - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCj6Vc0dUbmLEXByfgwtbG0teq+lhn1ZeCpBp/Ll+yapeTbdP0AuA9iZrcIi4O25ucy+VaZDutj2noNvkcq8dPrCmveX0Zxbylia7rNbd91DPU/94JRidElJPzB5eueObqiVWNWu1cGP0WdaHbecWy0Xu4fq+FqJn3z99Cg4XDYVsfP9avin6McHAaYItTmZHAuHgfL6hJCw4Ju0I7OMAlXgeb9S50nYpzN8ItbRmNQDZC3wdPs5iTd0LgGG/0P7ixhTWDSg5DeQc6JJ2rYezyzc1Lek3lQuBK6FiuvEyd99H2FrowN0b/n1pTQd//pq1G0AcGiwl0ttZ5i2HMe8sab baccala@max
 """
 
 import os
