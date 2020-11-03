@@ -117,7 +117,7 @@ user_data_file.close()
 import subprocess
 
 genisoimage_command = ["genisoimage", "-input-charset", "utf-8", "-o", "-", "-l",
-                       "-relaxed-filenames", "-graft-points",
+                       "-relaxed-filenames", "-V", "cidata", "-graft-points",
                        "meta-data={}".format(meta_data_file.name),
                        "user-data={}".format(user_data_file.name)]
 
