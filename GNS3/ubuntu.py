@@ -62,6 +62,8 @@ parser.add_argument('-s', '--disk', default=2048,
                     help='MBs of virtual disk (default 2048)')
 parser.add_argument('-r', '--release', default=20,
                     help='Ubuntu major release number (default 20)')
+parser.add_argument('-q', '--query', action="store_true",
+                    help='query the existence of the nodes')
 parser.add_argument('-v', '--verbose', action="store_true",
                     help='print the JSON node structure')
 args = parser.parse_args()
@@ -138,6 +140,11 @@ if len(ubuntus) > 0:
 
 if args.delete:
     print("Found no {} node to delete".format(args.name))
+    exit(1)
+
+if args.query:
+    if len(ubuntus) == 0:
+        print("No matching nodes")
     exit(1)
 
 # Find switches and find the first unoccupied port on a switch
