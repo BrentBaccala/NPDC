@@ -26,6 +26,7 @@ import json
 import os
 import time
 import tempfile
+import pprint
 
 import argparse
 
@@ -40,9 +41,17 @@ PROP_FILE = os.path.expanduser("~/.config/GNS3/2.2/gns3_server.conf")
 parser = argparse.ArgumentParser(description='Start an Ubuntu node in GNS3')
 parser.add_argument('-d', '--delete', action="store_true",
                     help='delete the node instead of creating it')
+parser.add_argument('-n', '--name', default='sagetest',
+                    help='name of the Ubuntu node')
+parser.add_argument('-p', '--project', default='Virtual Network',
+                    help='name of the GNS3 project')
+parser.add_argument('-c', '--cpus', default=1,
+                    help='number of virtual CPUs')
+parser.add_argument('-m', '--memory', default=4096,
+                    help='MBs of virtual RAM')
+parser.add_argument('-v', '--verbose', action="store_true",
+                    help='print the JSON node structure')
 args = parser.parse_args()
-
-project_name = "Virtual Network"
 
 # Obtain the credentials needed to authenticate ourself to the GNS3 server
 
@@ -64,14 +73,14 @@ result.raise_for_status()
 project_id = None
 
 for project in result.json():
-    if project['name'] == project_name:
+    if project['name'] == args.project:
         project_id = project['project_id']
 
 if not project_id:
-    print("Couldn't find project '{}'".format(project_name))
+    print("Couldn't find project '{}'".format(args.project))
     exit(1)
 
-print("'{}' is {}".format(project_name, project_id))
+print("'{}' is {}".format(args.project, project_id))
 
 # Get the existing nodes and links in the project.
 #
@@ -95,15 +104,17 @@ links = result.json()
 # Does 'sagetest' already exist in the project?
 #
 # GNS3 sometimes appends a number to the node name and creates
-# "sagetest1", so we identify a "sagetest" node as any node
-# whose name begins with "sagetest".
+# "sagetest1", so we identify our node as any node whose name
+# begins with args.name.
 
-sagetests = [n['node_id'] for n in nodes if n['name'].startswith('sagetest')]
+sagetests = [n['node_id'] for n in nodes if n['name'].startswith(args.name)]
 
 if len(sagetests) > 0:
-    print("sagetest already exists as node", sagetests[0])
+    print("{} already exists as node {}".format(args.name, sagetests[0]))
+    if args.verbose:
+        pprint.pprint(next(n for n in nodes if n['name'].startswith(args.name)))
     if args.delete:
-        print("deleting sagetest...")
+        print("deleting {}...".format(sagetests[0]))
         node_url = "http://{}/v2/projects/{}/nodes/{}".format(gns3_server, project_id, sagetests[0])
         result = requests.delete(node_url, auth=auth)
         result.raise_for_status()
@@ -111,7 +122,7 @@ if len(sagetests) > 0:
     exit(1)
 
 if args.delete:
-    print("Found no sagetest nodes to delete")
+    print("Found no {} node to delete".format(args.name))
     exit(1)
 
 # Find switches and find the first unoccupied port on a switch
@@ -136,8 +147,8 @@ first_unoccupied_adapter = next(i for i, e in enumerate(sorted(occupied_adapter_
 print("Building cloud-init configuration...")
 
 meta_data = """instance-id: ubuntu
-local-hostname: sagetest
-"""
+local-hostname: {}
+""".format(args.name)
 
 user_data = """#cloud-config
 # runcmd only runs once, and will cause the node to shutdown so we can resize its disk
@@ -250,7 +261,7 @@ url = "http://{}/v2/projects/{}/nodes".format(gns3_server, project_id)
 
 ubuntu_node = {
         "compute_id": "local",
-        "name": "sagetest",
+        "name": args.name,
         "node_type": "qemu",
         "properties": {
             "adapters": 1,
@@ -258,7 +269,8 @@ ubuntu_node = {
             "hda_disk_image": "ubuntu-20.04-server-cloudimg-amd64.img",
             "cdrom_image" : "config.iso",
             "qemu_path": "/usr/bin/qemu-system-x86_64",
-            "ram": 4096
+            "cpus": args.cpus,
+            "ram": args.memory
         },
 
         "symbol": ":/symbols/qemu_guest.svg",
