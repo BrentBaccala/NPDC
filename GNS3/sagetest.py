@@ -1,15 +1,31 @@
 #!/usr/bin/python3
 #
-# Script to start a GNS3 Ubuntu virtual machine named "sagetest"
-# on the existing project "Virtual Network".
+# Script to start a GNS3 Ubuntu virtual machine named "sagetest" on
+# the existing project "Virtual Network".
 #
 # Can be passed a '-d' option to delete an existing "sagetest" VM.
+#
+# We use an Ubuntu cloud image that comes with the cloud-init package
+# pre-installed, so that we can construct a configuration script and
+# provide it to the VM on a virtual CD-ROM.
+#
+# The current script installs a pre-generated host key to identify the
+# VM, installs an SSH public key to authenticate me in to the "ubuntu"
+# account, and reboots the machine so that we can resize its 2 GB
+# virtual disk.  The reboot is needed because GNS3 currently (2.2.15)
+# can't resize a disk before starting a node for the first time.
+#
+# I'd also like to set the DHCP client to use a pre-set client
+# identifier so that the VM always boots onto the same IP address,
+# but cloud-init doesn't seem to have any option to support that.
 
 import sys
 import requests
 from requests.auth import HTTPBasicAuth
 import json
 import os
+import time
+import tempfile
 
 import subprocess
 
@@ -68,8 +84,12 @@ result.raise_for_status()
 links = result.json()
 
 # Does 'sagetest' already exist in the project?
+#
+# GNS3 sometimes appends a number to the node name and creates
+# "sagetest1", so we identify a "sagetest" node as any node
+# whose name begins with "sagetest".
 
-sagetests = [n['node_id'] for n in nodes if n['name'] == 'sagetest']
+sagetests = [n['node_id'] for n in nodes if n['name'].startswith('sagetest')]
 
 if len(sagetests) > 0:
     print("sagetest already exists as node", sagetests[0])
@@ -103,11 +123,6 @@ first_unoccupied_adapter = next(i for i, e in enumerate(sorted(occupied_adapter_
 # Create an ISO image containing the boot configuration and upload it
 # to the GNS3 project.  We write the config to a temporary file,
 # convert it to ISO image, then post the ISO image to GNS3.
-#
-# This approach doesn't work with the standard GNS3 implementation,
-# which doesn't allow images to be loaded from the project directory.
-#
-# Requires a patched gns3-server.
 
 print("Building cloud-init configuration...")
 
@@ -116,6 +131,10 @@ local-hostname: sagetest
 """
 
 user_data = """#cloud-config
+# runcmd only runs once, and will cause the node to shutdown so we can resize its disk
+runcmd:
+   - [ shutdown, -h, now ]
+
 ssh_deletekeys: true
 ssh_keys:
     rsa_private: |
@@ -185,9 +204,6 @@ ssh_keys:
 ssh_authorized_keys:
     - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCj6Vc0dUbmLEXByfgwtbG0teq+lhn1ZeCpBp/Ll+yapeTbdP0AuA9iZrcIi4O25ucy+VaZDutj2noNvkcq8dPrCmveX0Zxbylia7rNbd91DPU/94JRidElJPzB5eueObqiVWNWu1cGP0WdaHbecWy0Xu4fq+FqJn3z99Cg4XDYVsfP9avin6McHAaYItTmZHAuHgfL6hJCw4Ju0I7OMAlXgeb9S50nYpzN8ItbRmNQDZC3wdPs5iTd0LgGG/0P7ixhTWDSg5DeQc6JJ2rYezyzc1Lek3lQuBK6FiuvEyd99H2FrowN0b/n1pTQd//pq1G0AcGiwl0ttZ5i2HMe8sab baccala@max
 """
-
-import os
-import tempfile
 
 meta_data_file = tempfile.NamedTemporaryFile(delete = False)
 meta_data_file.write(meta_data.encode('utf-8'))
@@ -266,5 +282,45 @@ result.raise_for_status()
 print("Starting the node...")
 
 project_start_url = "http://{}/v2/projects/{}/nodes/{}/start".format(gns3_server, project_id, ubuntu['node_id'])
+result = requests.post(project_start_url, auth=auth)
+result.raise_for_status()
+
+print("Waiting for node to start...")
+
+node_url = "http://{}/v2/projects/{}/nodes/{}".format(gns3_server, project_id, ubuntu['node_id'])
+result = requests.get(node_url, auth=auth)
+result.raise_for_status()
+while result.json()['status'] != 'started':
+    time.sleep(1)
+    result = requests.get(node_url, auth=auth)
+    result.raise_for_status()
+
+print("Waiting for node to stop (so we can resize its disk)...")
+
+node_url = "http://{}/v2/projects/{}/nodes/{}".format(gns3_server, project_id, ubuntu['node_id'])
+result = requests.get(node_url, auth=auth)
+result.raise_for_status()
+while result.json()['status'] == 'started':
+    time.sleep(1)
+    result = requests.get(node_url, auth=auth)
+    result.raise_for_status()
+
+# RESIZE THE DISK
+
+# Doesn't work before you boot.
+#
+# You currently have to start the VM in order to create a linked clone of the disk image,
+# so the disk we're trying to resize doesn't exist until we start the node.
+
+print("Extending disk by 16 GB...")
+
+url = "http://{}/v2/compute/projects/{}/qemu/nodes/{}/resize_disk".format(gns3_server, project_id, ubuntu['node_id'])
+
+resize_obj = {'drive_name' : 'hda', 'extend' : 16 * 1024}
+
+result = requests.post(url, auth=auth, data=json.dumps(resize_obj))
+result.raise_for_status()
+
+print("Restarting the node...")
 result = requests.post(project_start_url, auth=auth)
 result.raise_for_status()
