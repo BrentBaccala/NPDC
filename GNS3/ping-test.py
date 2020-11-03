@@ -139,11 +139,6 @@ atexit.register(remove_project, my_project['project_id'])
 # Create an ISO image containing the boot configuration and upload it
 # to the GNS3 project.  We write the config to a temporary file,
 # convert it to ISO image, then post the ISO image to GNS3.
-#
-# This approach doesn't work with the standard GNS3 implementation,
-# which doesn't allow images to be loaded from the project directory.
-#
-# Requires a patched gns3-server.
 
 print("Building CSRv configuration...")
 
