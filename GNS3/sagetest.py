@@ -1,9 +1,11 @@
 #!/usr/bin/python3
 #
-# Script to start a GNS3 Ubuntu machine named "sagetest"
+# Script to start a GNS3 Ubuntu virtual machine named "sagetest"
 # on the existing project "Virtual Network".
+#
+# Can be passed a '-d' option to delete an existing "sagetest" VM.
 
-
+import sys
 import requests
 from requests.auth import HTTPBasicAuth
 import json
@@ -64,6 +66,24 @@ result = requests.get(url, auth=auth)
 result.raise_for_status()
 
 links = result.json()
+
+# Does 'sagetest' already exist in the project?
+
+sagetests = [n['node_id'] for n in nodes if n['name'] == 'sagetest']
+
+if len(sagetests) > 0:
+    print("sagetest already exists as node", sagetests[0])
+    if len(sys.argv) > 1 and sys.argv[1] == '-d':
+        print("deleting sagetest...")
+        node_url = "http://{}/v2/projects/{}/nodes/{}".format(gns3_server, project_id, sagetests[0])
+        result = requests.delete(node_url, auth=auth)
+        result.raise_for_status()
+        exit(0)
+    exit(1)
+
+if len(sys.argv) > 1 and sys.argv[1] == '-d':
+    print("Found no sagetest nodes to delete")
+    exit(1)
 
 # Find switches and find the first unoccupied port on a switch
 # (actually only works right now if there's only a single switch)
