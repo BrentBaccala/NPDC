@@ -27,11 +27,20 @@ import os
 import time
 import tempfile
 
+import argparse
+
 import subprocess
 
 import configparser
 
 PROP_FILE = os.path.expanduser("~/.config/GNS3/2.2/gns3_server.conf")
+
+# Parse the command line options
+
+parser = argparse.ArgumentParser(description='Start an Ubuntu node in GNS3')
+parser.add_argument('-d', '--delete', action="store_true",
+                    help='delete the node instead of creating it')
+args = parser.parse_args()
 
 project_name = "Virtual Network"
 
@@ -93,7 +102,7 @@ sagetests = [n['node_id'] for n in nodes if n['name'].startswith('sagetest')]
 
 if len(sagetests) > 0:
     print("sagetest already exists as node", sagetests[0])
-    if len(sys.argv) > 1 and sys.argv[1] == '-d':
+    if args.delete:
         print("deleting sagetest...")
         node_url = "http://{}/v2/projects/{}/nodes/{}".format(gns3_server, project_id, sagetests[0])
         result = requests.delete(node_url, auth=auth)
@@ -101,7 +110,7 @@ if len(sagetests) > 0:
         exit(0)
     exit(1)
 
-if len(sys.argv) > 1 and sys.argv[1] == '-d':
+if args.delete:
     print("Found no sagetest nodes to delete")
     exit(1)
 
