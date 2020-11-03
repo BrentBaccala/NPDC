@@ -36,22 +36,33 @@ import configparser
 
 PROP_FILE = os.path.expanduser("~/.config/GNS3/2.2/gns3_server.conf")
 
+cloud_images = {
+    20: 'ubuntu-20.04-server-cloudimg-amd64.img',
+    18: 'ubuntu-18.04-server-cloudimg-amd64.img'
+}
+
 # Parse the command line options
 
 parser = argparse.ArgumentParser(description='Start an Ubuntu node in GNS3')
 parser.add_argument('-d', '--delete', action="store_true",
                     help='delete the node instead of creating it')
 parser.add_argument('-n', '--name', default='sagetest',
-                    help='name of the Ubuntu node')
+                    help='name of the Ubuntu node (default "sagetest")')
 parser.add_argument('-p', '--project', default='Virtual Network',
-                    help='name of the GNS3 project')
+                    help='name of the GNS3 project (default "Virtual Network")')
 parser.add_argument('-c', '--cpus', default=1,
-                    help='number of virtual CPUs')
+                    help='number of virtual CPUs (default 1)')
 parser.add_argument('-m', '--memory', default=4096,
-                    help='MBs of virtual RAM')
+                    help='MBs of virtual RAM (default 4096)')
+parser.add_argument('-s', '--disk', default=2048,
+                    help='MBs of virtual disk (default 2048)')
+parser.add_argument('-r', '--release', default=20,
+                    help='Ubuntu major release number (default 20)')
 parser.add_argument('-v', '--verbose', action="store_true",
                     help='print the JSON node structure')
 args = parser.parse_args()
+
+cloud_image = cloud_images[int(args.release)]
 
 # Obtain the credentials needed to authenticate ourself to the GNS3 server
 
@@ -151,9 +162,6 @@ local-hostname: {}
 """.format(args.name)
 
 user_data = """#cloud-config
-# runcmd only runs once, and will cause the node to shutdown so we can resize its disk
-runcmd:
-   - [ shutdown, -h, now ]
 
 ssh_deletekeys: true
 ssh_keys:
@@ -225,6 +233,14 @@ ssh_authorized_keys:
     - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCj6Vc0dUbmLEXByfgwtbG0teq+lhn1ZeCpBp/Ll+yapeTbdP0AuA9iZrcIi4O25ucy+VaZDutj2noNvkcq8dPrCmveX0Zxbylia7rNbd91DPU/94JRidElJPzB5eueObqiVWNWu1cGP0WdaHbecWy0Xu4fq+FqJn3z99Cg4XDYVsfP9avin6McHAaYItTmZHAuHgfL6hJCw4Ju0I7OMAlXgeb9S50nYpzN8ItbRmNQDZC3wdPs5iTd0LgGG/0P7ixhTWDSg5DeQc6JJ2rYezyzc1Lek3lQuBK6FiuvEyd99H2FrowN0b/n1pTQd//pq1G0AcGiwl0ttZ5i2HMe8sab baccala@max
 """
 
+# A cloud-init runcmd will only run once, at the end of the VM's first boot.
+# This one will cause the node to shutdown so we can resize the disk.
+
+if args.disk != 2048:
+    user_data.append("""runcmd:
+   - [ shutdown, -h, now ]
+""")
+
 meta_data_file = tempfile.NamedTemporaryFile(delete = False)
 meta_data_file.write(meta_data.encode('utf-8'))
 meta_data_file.close()
@@ -266,7 +282,7 @@ ubuntu_node = {
         "properties": {
             "adapters": 1,
             "adapter_type" : "virtio-net-pci",
-            "hda_disk_image": "ubuntu-20.04-server-cloudimg-amd64.img",
+            "hda_disk_image": cloud_image,
             "cdrom_image" : "config.iso",
             "qemu_path": "/usr/bin/qemu-system-x86_64",
             "cpus": args.cpus,
@@ -316,6 +332,9 @@ while result.json()['status'] != 'started':
     result = requests.get(node_url, auth=auth)
     result.raise_for_status()
 
+if args.disk == 2048:
+    exit(0)
+
 print("Waiting for node to stop (so we can resize its disk)...")
 
 node_url = "http://{}/v2/projects/{}/nodes/{}".format(gns3_server, project_id, ubuntu['node_id'])
@@ -333,11 +352,11 @@ while result.json()['status'] == 'started':
 # You currently have to start the VM in order to create a linked clone of the disk image,
 # so the disk we're trying to resize doesn't exist until we start the node.
 
-print("Extending disk by 16 GB...")
+print("Extending disk by {} MB...", args.disk - 2048)
 
 url = "http://{}/v2/compute/projects/{}/qemu/nodes/{}/resize_disk".format(gns3_server, project_id, ubuntu['node_id'])
 
-resize_obj = {'drive_name' : 'hda', 'extend' : 16 * 1024}
+resize_obj = {'drive_name' : 'hda', 'extend' : args.disk - 2048}
 
 result = requests.post(url, auth=auth, data=json.dumps(resize_obj))
 result.raise_for_status()
