@@ -1,7 +1,10 @@
 #!/usr/bin/python3
 #
 # Script to start a GNS3 Ubuntu virtual machine named "sagetest" on
-# the existing project "Virtual Network".
+# the existing project "Virtual Network".  These names can be changed
+# with command line options, with also let the user select the Ubuntu
+# release, the virtual memory size, the virtual disk size, and the
+# number of CPUs.
 #
 # Can be passed a '-d' option to delete an existing "sagetest" VM.
 #
@@ -11,9 +14,10 @@
 #
 # The current script installs a pre-generated host key to identify the
 # VM, installs an SSH public key to authenticate me in to the "ubuntu"
-# account, and reboots the machine so that we can resize its 2 GB
-# virtual disk.  The reboot is needed because GNS3 currently (2.2.15)
-# can't resize a disk before starting a node for the first time.
+# account, and (if needed) reboots the machine so that we can resize
+# its 2 GB virtual disk.  The reboot is needed because GNS3 currently
+# (2.2.15) can't resize a disk before starting a node for the first
+# time.
 #
 # I'd also like to set the DHCP client to use a pre-set client
 # identifier so that the VM always boots onto the same IP address,
