@@ -54,21 +54,23 @@ parser.add_argument('-n', '--name', default='ubuntu',
                     help='name of the Ubuntu node (default "ubuntu")')
 parser.add_argument('-p', '--project', default='Virtual Network',
                     help='name of the GNS3 project (default "Virtual Network")')
-parser.add_argument('-c', '--cpus', default=1,
+parser.add_argument('-c', '--cpus', type=int, default=1,
                     help='number of virtual CPUs (default 1)')
-parser.add_argument('-m', '--memory', default=4096,
+parser.add_argument('-m', '--memory', type=int, default=4096,
                     help='MBs of virtual RAM (default 4096)')
-parser.add_argument('-s', '--disk', default=2048,
+parser.add_argument('-s', '--disk', type=int, default=2048,
                     help='MBs of virtual disk (default 2048)')
-parser.add_argument('-r', '--release', default=20,
+parser.add_argument('-r', '--release', type=int, default=20,
                     help='Ubuntu major release number (default 20)')
+parser.add_argument('--vnc', action="store_true",
+                    help='use a VNC console (default is text console)')
 parser.add_argument('-q', '--query', action="store_true",
                     help='query the existence of the nodes')
 parser.add_argument('-v', '--verbose', action="store_true",
                     help='print the JSON node structure')
 args = parser.parse_args()
 
-cloud_image = cloud_images[int(args.release)]
+cloud_image = cloud_images[args.release]
 
 # Obtain the credentials needed to authenticate ourself to the GNS3 server
 
@@ -182,9 +184,9 @@ ssh_authorized_keys:
 # This one will cause the node to shutdown so we can resize the disk.
 
 if args.disk != 2048:
-    user_data.append("""runcmd:
+    user_data += """runcmd:
    - [ shutdown, -h, now ]
-""")
+"""
 
 meta_data_file = tempfile.NamedTemporaryFile(delete = False)
 meta_data_file.write(meta_data.encode('utf-8'))
@@ -238,6 +240,9 @@ ubuntu_node = {
         "x" : 0,
         "y" : 0
     }
+
+if args.vnc:
+    ubuntu_node['console_type'] = 'vnc'
 
 result = requests.post(url, auth=auth, data=json.dumps(ubuntu_node))
 result.raise_for_status()
