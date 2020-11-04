@@ -120,11 +120,10 @@ result.raise_for_status()
 
 links = result.json()
 
-# Does 'ubuntu' already exist in the project?
+# Does a node with this name already exist in the project?
 #
-# GNS3 sometimes appends a number to the node name and creates
-# "ubuntu1", so we identify our node as any node whose name
-# begins with args.name.
+# GNS3 sometimes appends a number to the node name, so we identify our
+# node as any node whose name begins with args.name.
 
 ubuntus = [n['node_id'] for n in nodes if n['name'].startswith(args.name)]
 
@@ -151,9 +150,12 @@ if args.query:
 
 # Find switches and find the first unoccupied port on a switch
 # (actually only works right now if there's only a single switch)
-
+#
 # We identify switches by looking for the string "switch" in the
 # name of the SVG file used for the node's icon.
+#
+# We deliberately skip adapter 0, since on a Cisco nx9k, adapter 0 is
+# the management interface.
 
 switches = [n['node_id'] for n in nodes if 'switch' in n['symbol']]
 
