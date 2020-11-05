@@ -64,6 +64,8 @@ parser.add_argument('-r', '--release', type=int, default=20,
                     help='Ubuntu major release number (default 20)')
 parser.add_argument('--vnc', action="store_true",
                     help='use a VNC console (default is text console)')
+parser.add_argument('--ls', action="store_true",
+                    help='list running nodes')
 parser.add_argument('-q', '--query', action="store_true",
                     help='query the existence of the nodes')
 parser.add_argument('-v', '--verbose', action="store_true",
@@ -112,6 +114,11 @@ result = requests.get(url, auth=auth)
 result.raise_for_status()
 
 nodes = result.json()
+
+if args.ls:
+    for node in nodes:
+        print(node['name'])
+    exit(0)
 
 url = "http://{}/v2/projects/{}/links".format(gns3_server, project_id)
 
