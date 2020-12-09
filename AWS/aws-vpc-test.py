@@ -7,7 +7,7 @@ try:
    session = boto3.Session()
    ec2 = session.client('ec2')
 except:
-   session = boto3.Session(profile_name='bruce')
+   session = boto3.Session(profile_name='vae')
    ec2 = session.client('ec2')
 
 # response = ec2.describe_instances()
@@ -90,24 +90,40 @@ def create_two_subnets():
 
 instance_type={'ami-e0e0adf7':'c4.large'}
 
-def create_instances(N, SubnetId, AMI='ami-f4cc1de2', UserData=''):
-  response = ec2.run_instances(
-          ImageId = AMI,
-          MinCount=N,
-          MaxCount=N,
-          InstanceType=instance_type.get(AMI, 't2.medium'),
-          KeyName='baccala',
-          UserData=UserData,
-          SubnetId = SubnetId)
+def create_instances(N, SubnetId, AMI='ami-f4cc1de2', InstanceType=None, Name=None, UserData=None, Hibernate=None):
+   params = {
+      'ImageId' : AMI,
+      'MinCount' : N,
+      'MaxCount' : N,
+      'KeyName' : 'baccala',
+      'SubnetId' : SubnetId
+   }
 
-  return [inst['InstanceId'] for inst in response['Instances']]
+   if InstanceType:
+      params['InstanceType'] = InstanceType
+   else:
+      params['InstanceType'] = instance_type.get(AMI, 't2.medium')
 
-  # List comprehension: the last line has the same result as this:
-  #
-  # result=[]
-  # for inst in response['Instances']
-  #   result.append(inst['InstanceId'])
-  # return result
+   if Name:
+      params['TagSpecifications'] = [{'ResourceType' : 'instance', 'Tags' : [{'Key' : 'Name', 'Value' : Name }]}]
+
+   if UserData:
+      params['UserData'] = UserData
+
+   if Hibernate:
+      params['BlockDeviceMappings'] = [{'DeviceName' : '/dev/sda1', 'Ebs' : {'VolumeSize': Hibernate, 'Encrypted' : True}}]
+      params['HibernationOptions'] = {'Configured' : True}
+
+   response = ec2.run_instances(**params)
+
+   return [inst['InstanceId'] for inst in response['Instances']]
+
+   # List comprehension: the last line has the same result as this:
+   #
+   # result=[]
+   # for inst in response['Instances']
+   #   result.append(inst['InstanceId'])
+   # return result
 
 def create_two_armed(mode='original'):
 
@@ -276,3 +292,76 @@ def stop_instances():
   for i in get_instances(get_vpcids()):
     ec2.stop_instances(InstanceIds=[i])
 
+
+
+def create_bbb_server():
+
+  try:
+    subnets = create_one_subnet()
+  except:
+    subnets = get_subnets()
+
+  # http://cloud-images.ubuntu.com/locator/ec2/
+  # gives ami-09d160e4b73e3e8ac for us-east-2, bionic, amd, ebs
+
+  ami = "ami-09d160e4b73e3e8ac"
+
+  instance = create_instances(1, subnets[0], AMI=ami, InstanceType='c5.4xlarge', Name='itpietraining.com', Hibernate=64)[0]
+
+  original_nid = find_network_interfaces(instance)[0]
+
+  # XXX this call has to wait until the instance is in a valid state for it
+  ec2.associate_address(AllocationId = 'eipalloc-004adb1fe297bf793', NetworkInterfaceId = original_nid)
+
+
+def create_turn_server():
+
+  try:
+    subnets = create_one_subnet()
+  except:
+    subnets = get_subnets()
+
+  # http://cloud-images.ubuntu.com/locator/ec2/
+  # gives ami-09d160e4b73e3e8ac for us-east-2, bionic, amd, ebs
+
+  ami = "ami-09d160e4b73e3e8ac"
+
+  instance = create_instances(1, subnets[0], AMI=ami, InstanceType='t3a.micro', Name='turn.itpietraining.com')[0]
+
+  original_nid = find_network_interfaces(instance)[0]
+
+  # XXX this call has to wait until the instance is in a valid state for it
+  ec2.associate_address(AllocationId = 'eipalloc-05ce119ed906a0b8a', NetworkInterfaceId = original_nid)
+
+def create_itpie_server():
+
+  try:
+    subnets = create_one_subnet()
+  except:
+    subnets = get_subnets()
+
+  # https://wiki.centos.org/Cloud/AWS
+  # gives AMI for us-east-2, CentOS Linux 7.8.2003
+
+  ami = "ami-0a75b786d9a7f8144"
+
+  instance = create_instances(1, subnets[0], AMI=ami, InstanceType='c5.xlarge', Name='itpie.itpietraining.com')[0]
+
+  original_nid = find_network_interfaces(instance)[0]
+
+  print(original_nid)
+
+  # XXX this call has to wait until the instance is in a valid state for it
+  ec2.associate_address(AllocationId = 'eipalloc-0cb6bf6b491b9426e', NetworkInterfaceId = original_nid)
+
+
+def create_Cisco_XR():
+
+  try:
+    subnets = create_one_subnet()
+  except:
+    subnets = get_subnets()
+
+  ami = "ami-534a6436"
+
+  instance = create_instances(1, subnets[0], AMI=ami, InstanceType='m4.large', Name='Cisco XR')[0]
