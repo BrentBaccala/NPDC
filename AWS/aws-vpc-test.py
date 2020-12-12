@@ -355,13 +355,26 @@ def create_itpie_server():
   ec2.associate_address(AllocationId = 'eipalloc-0cb6bf6b491b9426e', NetworkInterfaceId = original_nid)
 
 
-def create_Cisco_XR():
+# These are us-east-2 (Ohio) AMIs
 
-  try:
-    subnets = create_one_subnet()
-  except:
-    subnets = get_subnets()
+router_AMIs = {
+   'Cisco XRv9000' : ("ami-534a6436", 'm4.xlarge'),               # options are m4.xlarge ($.20 / hr), m4.4xlarge, c4.2xlarge
+   'Cisco CSR 1000V' : ("ami-062d9a2d78f5a83b5", 't2.medium'),    # t2.medium ($.05 / hr)
+   'Arista CloudEOS' : ("ami-098e3631c6354e063", 'c5.xlarge'),    # default c5.xlarge (4 vCPUs, 8 GB RAM, $0.17 / hr)
+   'Juniper vMX' : ("ami-05aa93d5f6932b707", 'c4.2xlarge')
+}
 
-  ami = "ami-534a6436"
+# Juniper vMX requires 4 vCPUs and 15 GB RAM
+# Juniper recommends m4.4xlarge, c4.2xlarge, c5.2xlarge, or c5.4xlarge
 
-  instance = create_instances(1, subnets[0], AMI=ami, InstanceType='m4.large', Name='Cisco XR')[0]
+# t2.xlarge - 4 vCPUs, 16 GB RAM, $0.19 / hr
+
+def create_routers():
+
+   try:
+      subnets = create_one_subnet()
+   except:
+      subnets = get_subnets()
+
+   for name,tuple in router_AMIs.items():
+      create_instances(1, subnets[0], AMI=tuple[0], InstanceType=tuple[1], Name=name)
