@@ -95,7 +95,7 @@ def create_instances(N, SubnetId, AMI='ami-f4cc1de2', InstanceType=None, Name=No
       'ImageId' : AMI,
       'MinCount' : N,
       'MaxCount' : N,
-      'KeyName' : 'baccala',
+      'KeyName' : 'BruceCaslow@itpietraining',
       'SubnetId' : SubnetId
    }
 
