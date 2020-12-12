@@ -88,7 +88,7 @@ def create_two_subnets():
 
 # default ami (f4cc1de2) is Ubuntu Linux
 
-instance_type={'ami-e0e0adf7':'c4.large'}
+instance_type={'ami-e0e0adf7':'c4.large'}    # e0e0adf7 is Cisco ASA
 
 def create_instances(N, SubnetId, AMI='ami-f4cc1de2', InstanceType=None, Name=None, UserData=None, Hibernate=None):
    params = {
@@ -133,7 +133,7 @@ def create_two_armed(mode='original'):
     CiscoCommands = ['interface G 2', 'ip address dhcp', 'no shut', 'exit', 'hostname Brent', 'router ospf 171']
   elif mode=='asav':
     ami1='ami-46c1b650'
-    ami2='ami-e0e0adf7'
+    ami2='ami-e0e0adf7'  # Cisco ASA
     CiscoCommands = []
   elif mode=='original':
     ami1='ami-f4cc1de2'
