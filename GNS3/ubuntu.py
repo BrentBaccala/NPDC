@@ -88,76 +88,6 @@ config.read(PROP_FILE)
 gns3_server = config['Server']['host'] + ":" + config['Server']['port']
 auth = HTTPBasicAuth(config['Server']['user'], config['Server']['password'])
 
-# This will return the local IP address that the script uses to
-# connect to the GNS3 server.  We need this to tell the instance
-# how to connect back to the script, and if we've got multiple
-# interfaces, multiple DNS names, and multiple IP addresses, it's a
-# bit unclear which one to use.
-#
-# from https://stackoverflow.com/a/28950776/1493790
-
-def get_ip():
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    # doesn't even have to be reachable
-    s.connect((gns3_server.split(':')[0], 1))
-    IP = s.getsockname()[0]
-    s.close()
-    return IP
-
-script_ip = get_ip()
-
-# Start an HTTP server running that will receive notifications from
-# the instance after its completes its boot.
-#
-# This assumes that the virtual topology will have connectivity with
-# the host running this script.
-#
-# We keep a set of which instances have reported in, and a condition
-# variable is used to signal our main thread when they report.
-
-instances_reported = set()
-instance_report_cv = threading.Condition()
-
-class RequestHandler(BaseHTTPRequestHandler):
-    def do_POST(self):
-        length = self.headers['Content-Length']
-        self.send_response_only(100)
-        self.end_headers()
-
-        content = self.rfile.read(int(length))
-        # print(content.decode('utf-8'))
-
-        with instance_report_cv:
-            if not self.client_address[0] in instances_reported:
-                instances_reported.add(self.client_address[0])
-                instance_report_cv.notify()
-
-        self.send_response(200)
-        self.end_headers()
-
-server_address = ('', 0)
-httpd = HTTPServer(server_address, RequestHandler)
-
-notification_url = "http://{}:{}/".format(script_ip, httpd.server_port)
-
-# Catch uncaught exceptions and shutdown the httpd server that we're
-# about to start.
-#
-# from https://stackoverflow.com/a/6598286/1493790
-
-import sys
-import pdb
-
-def my_except_hook(exctype, value, traceback):
-    httpd.shutdown()
-    pdb.set_trace()
-    sys.__excepthook__(exctype, value, traceback)
-sys.excepthook = my_except_hook
-
-threading.Thread(target=httpd.serve_forever).start()
-
-
-
 # Find the GNS3 project called project_name
 
 print("Finding project...")
@@ -246,6 +176,74 @@ adapters = [a for l in links for a in l['nodes']]
 occupied_ports = [(a['adapter_number'], a['port_number']) for a in adapters if a['node_id'] in switches]
 
 first_unoccupied_port = next(p for p in sorted(switch_ports)[1:] if p not in occupied_ports)
+
+# This will return the local IP address that the script uses to
+# connect to the GNS3 server.  We need this to tell the instance
+# how to connect back to the script, and if we've got multiple
+# interfaces, multiple DNS names, and multiple IP addresses, it's a
+# bit unclear which one to use.
+#
+# from https://stackoverflow.com/a/28950776/1493790
+
+def get_ip():
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    # doesn't even have to be reachable
+    s.connect((gns3_server.split(':')[0], 1))
+    IP = s.getsockname()[0]
+    s.close()
+    return IP
+
+script_ip = get_ip()
+
+# Start an HTTP server running that will receive notifications from
+# the instance after its completes its boot.
+#
+# This assumes that the virtual topology will have connectivity with
+# the host running this script.
+#
+# We keep a set of which instances have reported in, and a condition
+# variable is used to signal our main thread when they report.
+
+instances_reported = set()
+instance_report_cv = threading.Condition()
+
+class RequestHandler(BaseHTTPRequestHandler):
+    def do_POST(self):
+        length = self.headers['Content-Length']
+        self.send_response_only(100)
+        self.end_headers()
+
+        content = self.rfile.read(int(length))
+        # print(content.decode('utf-8'))
+
+        with instance_report_cv:
+            if not self.client_address[0] in instances_reported:
+                instances_reported.add(self.client_address[0])
+                instance_report_cv.notify()
+
+        self.send_response(200)
+        self.end_headers()
+
+server_address = ('', 0)
+httpd = HTTPServer(server_address, RequestHandler)
+
+notification_url = "http://{}:{}/".format(script_ip, httpd.server_port)
+
+# Catch uncaught exceptions and shutdown the httpd server that we're
+# about to start.
+#
+# from https://stackoverflow.com/a/6598286/1493790
+
+import sys
+import pdb
+
+def my_except_hook(exctype, value, traceback):
+    httpd.shutdown()
+    pdb.set_trace()
+    sys.__excepthook__(exctype, value, traceback)
+sys.excepthook = my_except_hook
+
+threading.Thread(target=httpd.serve_forever).start()
 
 # Create an ISO image containing the boot configuration and upload it
 # to the GNS3 project.  We write the config to a temporary file,
