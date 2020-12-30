@@ -161,16 +161,17 @@ if args.query:
 # We identify switches by looking for the string "switch" in the
 # name of the SVG file used for the node's icon.
 #
-# We deliberately skip adapter 0, since on a Cisco nx9k, adapter 0 is
+# We deliberately skip the first port, since on a Cisco nx9k, adapter 0 is
 # the management interface.
 
 switches = [n['node_id'] for n in nodes if 'switch' in n['symbol']]
+switch_ports = [(p['adapter_number'], p['port_number']) for n in nodes if 'switch' in n['symbol'] for p in n['ports']]
 
 adapters = [a for l in links for a in l['nodes']]
-occupied_adapter_numbers = [a['adapter_number'] for a in adapters if a['node_id'] in switches]
+occupied_ports = [(a['adapter_number'], a['port_number']) for a in adapters if a['node_id'] in switches]
 
 # from https://stackoverflow.com/a/28178803
-first_unoccupied_adapter = next(i for i, e in enumerate(sorted(occupied_adapter_numbers) + [ None ], 1) if i != e)
+first_unoccupied_port = next(p for p in switch_ports[1:] if p not in occupied_ports)
 
 
 # Create an ISO image containing the boot configuration and upload it
@@ -266,8 +267,8 @@ url = "http://{}/v2/projects/{}/links".format(gns3_server, project_id)
 link_obj = {'nodes' : [{'adapter_number' : 0,
                         'port_number' : 0,
                         'node_id' : ubuntu['node_id']},
-                       {'adapter_number' : first_unoccupied_adapter,
-                        'port_number' : 0,
+                       {'adapter_number' : first_unoccupied_port[0],
+                        'port_number' : first_unoccupied_port[1],
                         'node_id' : switches[0]}]}
 
 result = requests.post(url, auth=auth, data=json.dumps(link_obj))
