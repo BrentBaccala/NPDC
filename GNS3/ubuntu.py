@@ -12,12 +12,13 @@
 # pre-installed, so that we can construct a configuration script and
 # provide it to the VM on a virtual CD-ROM.
 #
-# The current script installs a pre-generated host key to identify the
-# VM, installs an SSH public key to authenticate me in to the "ubuntu"
-# account, and (if needed) reboots the machine so that we can resize
-# its 2 GB virtual disk.  The reboot is needed because GNS3 currently
-# (2.2.15) can't resize a disk before starting a node for the first
-# time.
+# The current script installs SSH public key to authenticate me in to
+# the "ubuntu" account and POSTs a notification message back to this
+# script once the boot process is complete.
+#
+# Resizing the virtual disk from its 2 GB default size now requires a
+# custom gns3server since the released server can't resize disks
+# before the instance's first boot.
 #
 # I'd also like to set the DHCP client to use a pre-set client
 # identifier so that the VM always boots onto the same IP address,
@@ -32,6 +33,10 @@ import os
 import time
 import tempfile
 import pprint
+
+import socket
+import threading
+from http.server import BaseHTTPRequestHandler,HTTPServer
 
 import argparse
 
@@ -82,6 +87,76 @@ config.read(PROP_FILE)
 
 gns3_server = config['Server']['host'] + ":" + config['Server']['port']
 auth = HTTPBasicAuth(config['Server']['user'], config['Server']['password'])
+
+# This will return the local IP address that the script uses to
+# connect to the GNS3 server.  We need this to tell the instance
+# how to connect back to the script, and if we've got multiple
+# interfaces, multiple DNS names, and multiple IP addresses, it's a
+# bit unclear which one to use.
+#
+# from https://stackoverflow.com/a/28950776/1493790
+
+def get_ip():
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    # doesn't even have to be reachable
+    s.connect((gns3_server.split(':')[0], 1))
+    IP = s.getsockname()[0]
+    s.close()
+    return IP
+
+script_ip = get_ip()
+
+# Start an HTTP server running that will receive notifications from
+# the instance after its completes its boot.
+#
+# This assumes that the virtual topology will have connectivity with
+# the host running this script.
+#
+# We keep a set of which instances have reported in, and a condition
+# variable is used to signal our main thread when they report.
+
+instances_reported = set()
+instance_report_cv = threading.Condition()
+
+class RequestHandler(BaseHTTPRequestHandler):
+    def do_POST(self):
+        length = self.headers['Content-Length']
+        self.send_response_only(100)
+        self.end_headers()
+
+        content = self.rfile.read(int(length))
+        # print(content.decode('utf-8'))
+
+        with instance_report_cv:
+            if not self.client_address[0] in instances_reported:
+                instances_reported.add(self.client_address[0])
+                instance_report_cv.notify()
+
+        self.send_response(200)
+        self.end_headers()
+
+server_address = ('', 0)
+httpd = HTTPServer(server_address, RequestHandler)
+
+notification_url = "http://{}:{}/".format(script_ip, httpd.server_port)
+
+# Catch uncaught exceptions and shutdown the httpd server that we're
+# about to start.
+#
+# from https://stackoverflow.com/a/6598286/1493790
+
+import sys
+import pdb
+
+def my_except_hook(exctype, value, traceback):
+    httpd.shutdown()
+    pdb.set_trace()
+    sys.__excepthook__(exctype, value, traceback)
+sys.excepthook = my_except_hook
+
+threading.Thread(target=httpd.serve_forever).start()
+
+
 
 # Find the GNS3 project called project_name
 
@@ -186,7 +261,9 @@ user_data = {'ssh_authorized_keys':
              [ "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCj6Vc0dUbmLEXByfgwtbG0teq+lhn1ZeCpBp/Ll+yapeTbdP0AuA9iZrcIi4O25ucy+VaZDutj2noNvkcq8dPrCmveX0Zxbylia7rNbd91DPU/94JRidElJPzB5eueObqiVWNWu1cGP0WdaHbecWy0Xu4fq+FqJn3z99Cg4XDYVsfP9avin6McHAaYItTmZHAuHgfL6hJCw4Ju0I7OMAlXgeb9S50nYpzN8ItbRmNQDZC3wdPs5iTd0LgGG/0P7ixhTWDSg5DeQc6JJ2rYezyzc1Lek3lQuBK6FiuvEyd99H2FrowN0b/n1pTQd//pq1G0AcGiwl0ttZ5i2HMe8sab baccala@max",
                "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCrP+7mipq2WDogHqJ4So8F4fwPNj87sfOuFh6c3Md5SHg3B3U29Mqu+MgVz9aZ60Nsfr5/blZA7Kjx0GeMHiZHnVf8hS4R8vx066Ck479ZL+6kXDijkxBTPQoTfpuRsqN+vhX5pS+WAPfgKl6pcRtonTMBY1dh/B+KQBhQ2KzdydpDz7dLQRmuKIKNvyNhs4CRS0P8oFZlmuvDjdmvkmKbyp06sZAFHbbWhLs0PHobItNDviwRrBg59tS9Dr40raGUrp3SIsaQTIT56zQAdVB36iZDqYbUf/rCizIcsoCWB76LW7JMvJot1NVKtN9D56ZCgXhW4IJ1dWw2bPY+6lz3 BrentBaccala@max",
                "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCzuN81Hcxd5wpfT8JFzhFXG0JoyOpLAOGl6r0bb4iTt86VJMfvByJorKHVWi/Wp1qRqzAAeAnlSKRTm7CeIy744Y1/iaWQwDMkS+Sjwhib104sqM8EIFVVeiorvwPa8GbpdgxS6H6s5zO4mlnW5MdiV67jlyd0xWc3jDWCqwGLJBgYrJEuztQ5hlLDfliDSs8ZpSijgkROII2yORuU+YuVkHgFcmRDXnIKq7iL5xKW89KGSU8yOi6v1iW9xccs0m5hB35B3zX8Kha25dhBpVXrLlvP8Xf2y8MYIoYVaYurLLqSVmRoGMXOnaXxw3iX9ERMvuhj0PIPNPOK7ZJvN3en baccala@samsung",
-               "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC9S97gTUYfGLFR0ao29wcasi0FDPNQfocwogyXXZoo9aPyEQE2UzsG8geqlh34YVa5yP3Y5IELAfhEaIesM7tDktISIRXEqcGthP9NSlPm/nGeNq2xeUKoHw9gfB4UkT1sLPz2unQB9MK532O+blJqdSVXsAbi7atXqx+P16faz9+VU+uYP923s790tw6X27Udpg50Ie84DchmOup/lRXlemOb6Q3iz3bVyOg1/7KLwg4L7IGvyYwmtrhO6BAdZRGwYhptGHBovSXd+YoDUsEjul2KKsmvzWK7sYFiwE9ctxTZB2UT3KgughmWCzftoErG/LYZj/PgPHgiTGgRvVeF baccala@osito"]
+               "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC9S97gTUYfGLFR0ao29wcasi0FDPNQfocwogyXXZoo9aPyEQE2UzsG8geqlh34YVa5yP3Y5IELAfhEaIesM7tDktISIRXEqcGthP9NSlPm/nGeNq2xeUKoHw9gfB4UkT1sLPz2unQB9MK532O+blJqdSVXsAbi7atXqx+P16faz9+VU+uYP923s790tw6X27Udpg50Ie84DchmOup/lRXlemOb6Q3iz3bVyOg1/7KLwg4L7IGvyYwmtrhO6BAdZRGwYhptGHBovSXd+YoDUsEjul2KKsmvzWK7sYFiwE9ctxTZB2UT3KgughmWCzftoErG/LYZj/PgPHgiTGgRvVeF baccala@osito"],
+
+             'phone_home': {'url': notification_url},
 }
 
 meta_data_file = tempfile.NamedTemporaryFile(delete = False)
@@ -295,3 +372,13 @@ while result.json()['status'] != 'started':
     time.sleep(1)
     result = requests.get(node_url, auth=auth)
     result.raise_for_status()
+
+print("Waiting for node to boot...")
+
+with instance_report_cv:
+    while len(instances_reported) == 0:
+        instance_report_cv.wait()
+
+# print(instances_reported)
+
+httpd.shutdown()
