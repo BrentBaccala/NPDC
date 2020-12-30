@@ -188,14 +188,7 @@ user_data = """#cloud-config
 ssh_authorized_keys:
     - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCj6Vc0dUbmLEXByfgwtbG0teq+lhn1ZeCpBp/Ll+yapeTbdP0AuA9iZrcIi4O25ucy+VaZDutj2noNvkcq8dPrCmveX0Zxbylia7rNbd91DPU/94JRidElJPzB5eueObqiVWNWu1cGP0WdaHbecWy0Xu4fq+FqJn3z99Cg4XDYVsfP9avin6McHAaYItTmZHAuHgfL6hJCw4Ju0I7OMAlXgeb9S50nYpzN8ItbRmNQDZC3wdPs5iTd0LgGG/0P7ixhTWDSg5DeQc6JJ2rYezyzc1Lek3lQuBK6FiuvEyd99H2FrowN0b/n1pTQd//pq1G0AcGiwl0ttZ5i2HMe8sab baccala@max
     - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCrP+7mipq2WDogHqJ4So8F4fwPNj87sfOuFh6c3Md5SHg3B3U29Mqu+MgVz9aZ60Nsfr5/blZA7Kjx0GeMHiZHnVf8hS4R8vx066Ck479ZL+6kXDijkxBTPQoTfpuRsqN+vhX5pS+WAPfgKl6pcRtonTMBY1dh/B+KQBhQ2KzdydpDz7dLQRmuKIKNvyNhs4CRS0P8oFZlmuvDjdmvkmKbyp06sZAFHbbWhLs0PHobItNDviwRrBg59tS9Dr40raGUrp3SIsaQTIT56zQAdVB36iZDqYbUf/rCizIcsoCWB76LW7JMvJot1NVKtN9D56ZCgXhW4IJ1dWw2bPY+6lz3 BrentBaccala@max
-"""
 
-# A cloud-init runcmd will only run once, at the end of the VM's first boot.
-# This one will cause the node to shutdown so we can resize the disk.
-
-if args.disk != 2048:
-    user_data += """runcmd:
-   - [ shutdown, -h, now ]
 """
 
 meta_data_file = tempfile.NamedTemporaryFile(delete = False)
@@ -274,6 +267,19 @@ link_obj = {'nodes' : [{'adapter_number' : 0,
 result = requests.post(url, auth=auth, data=json.dumps(link_obj))
 result.raise_for_status()
 
+# RESIZE THE NODE'S DISK (IF REQUESTED)
+
+if args.disk > 2048:
+
+    print("Extending disk by {} MB...", args.disk - 2048)
+
+    url = "http://{}/v2/compute/projects/{}/qemu/nodes/{}/resize_disk".format(gns3_server, project_id, ubuntu['node_id'])
+
+    resize_obj = {'drive_name' : 'hda', 'extend' : args.disk - 2048}
+
+    result = requests.post(url, auth=auth, data=json.dumps(resize_obj))
+    result.raise_for_status()
+
 # START NODE RUNNING
 
 print("Starting the node...")
@@ -291,36 +297,3 @@ while result.json()['status'] != 'started':
     time.sleep(1)
     result = requests.get(node_url, auth=auth)
     result.raise_for_status()
-
-if args.disk == 2048:
-    exit(0)
-
-print("Waiting for node to stop (so we can resize its disk)...")
-
-node_url = "http://{}/v2/projects/{}/nodes/{}".format(gns3_server, project_id, ubuntu['node_id'])
-result = requests.get(node_url, auth=auth)
-result.raise_for_status()
-while result.json()['status'] == 'started':
-    time.sleep(1)
-    result = requests.get(node_url, auth=auth)
-    result.raise_for_status()
-
-# RESIZE THE DISK
-
-# Doesn't work before you boot.
-#
-# You currently have to start the VM in order to create a linked clone of the disk image,
-# so the disk we're trying to resize doesn't exist until we start the node.
-
-print("Extending disk by {} MB...", args.disk - 2048)
-
-url = "http://{}/v2/compute/projects/{}/qemu/nodes/{}/resize_disk".format(gns3_server, project_id, ubuntu['node_id'])
-
-resize_obj = {'drive_name' : 'hda', 'extend' : args.disk - 2048}
-
-result = requests.post(url, auth=auth, data=json.dumps(resize_obj))
-result.raise_for_status()
-
-print("Restarting the node...")
-result = requests.post(project_start_url, auth=auth)
-result.raise_for_status()
