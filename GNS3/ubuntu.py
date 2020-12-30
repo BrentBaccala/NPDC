@@ -156,8 +156,7 @@ if args.query:
         print("No matching nodes")
     exit(1)
 
-# Find switches and find the first unoccupied port on a switch
-# (actually only works right now if there's only a single switch)
+# Find switches and find the first unoccupied port on a switch.
 #
 # We identify switches by looking for the string "switch" in the
 # name of the SVG file used for the node's icon.
@@ -171,9 +170,7 @@ switch_ports = [(p['adapter_number'], p['port_number']) for n in nodes if 'switc
 adapters = [a for l in links for a in l['nodes']]
 occupied_ports = [(a['adapter_number'], a['port_number']) for a in adapters if a['node_id'] in switches]
 
-# from https://stackoverflow.com/a/28178803
-first_unoccupied_port = next(p for p in switch_ports[1:] if p not in occupied_ports)
-
+first_unoccupied_port = next(p for p in sorted(switch_ports)[1:] if p not in occupied_ports)
 
 # Create an ISO image containing the boot configuration and upload it
 # to the GNS3 project.  We write the config to a temporary file,
