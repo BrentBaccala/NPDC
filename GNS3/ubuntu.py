@@ -344,7 +344,7 @@ result.raise_for_status()
 
 if args.disk > 2048:
 
-    print("Extending disk by {} MB...", args.disk - 2048)
+    print("Extending disk by {} MB...".format(args.disk - 2048))
 
     url = "http://{}/v2/compute/projects/{}/qemu/nodes/{}/resize_disk".format(gns3_server, project_id, ubuntu['node_id'])
 
@@ -371,7 +371,7 @@ while result.json()['status'] != 'started':
     result = requests.get(node_url, auth=auth)
     result.raise_for_status()
 
-print("Waiting for node to boot...")
+print("Waiting for node to finish booting...")
 
 with instance_report_cv:
     while len(instances_reported) == 0:
