@@ -27,6 +27,7 @@ import sys
 import requests
 from requests.auth import HTTPBasicAuth
 import json
+import yaml
 import os
 import time
 import tempfile
@@ -180,25 +181,23 @@ first_unoccupied_port = next(p for p in switch_ports[1:] if p not in occupied_po
 
 print("Building cloud-init configuration...")
 
-meta_data = """instance-id: ubuntu
-local-hostname: {}
-""".format(args.name)
+meta_data = {'instance-id' : 'ubuntu',
+             'local-hostname' : args.name
+}
 
-user_data = """#cloud-config
-ssh_authorized_keys:
-    - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCj6Vc0dUbmLEXByfgwtbG0teq+lhn1ZeCpBp/Ll+yapeTbdP0AuA9iZrcIi4O25ucy+VaZDutj2noNvkcq8dPrCmveX0Zxbylia7rNbd91DPU/94JRidElJPzB5eueObqiVWNWu1cGP0WdaHbecWy0Xu4fq+FqJn3z99Cg4XDYVsfP9avin6McHAaYItTmZHAuHgfL6hJCw4Ju0I7OMAlXgeb9S50nYpzN8ItbRmNQDZC3wdPs5iTd0LgGG/0P7ixhTWDSg5DeQc6JJ2rYezyzc1Lek3lQuBK6FiuvEyd99H2FrowN0b/n1pTQd//pq1G0AcGiwl0ttZ5i2HMe8sab baccala@max
-    - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCrP+7mipq2WDogHqJ4So8F4fwPNj87sfOuFh6c3Md5SHg3B3U29Mqu+MgVz9aZ60Nsfr5/blZA7Kjx0GeMHiZHnVf8hS4R8vx066Ck479ZL+6kXDijkxBTPQoTfpuRsqN+vhX5pS+WAPfgKl6pcRtonTMBY1dh/B+KQBhQ2KzdydpDz7dLQRmuKIKNvyNhs4CRS0P8oFZlmuvDjdmvkmKbyp06sZAFHbbWhLs0PHobItNDviwRrBg59tS9Dr40raGUrp3SIsaQTIT56zQAdVB36iZDqYbUf/rCizIcsoCWB76LW7JMvJot1NVKtN9D56ZCgXhW4IJ1dWw2bPY+6lz3 BrentBaccala@max
-    - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCzuN81Hcxd5wpfT8JFzhFXG0JoyOpLAOGl6r0bb4iTt86VJMfvByJorKHVWi/Wp1qRqzAAeAnlSKRTm7CeIy744Y1/iaWQwDMkS+Sjwhib104sqM8EIFVVeiorvwPa8GbpdgxS6H6s5zO4mlnW5MdiV67jlyd0xWc3jDWCqwGLJBgYrJEuztQ5hlLDfliDSs8ZpSijgkROII2yORuU+YuVkHgFcmRDXnIKq7iL5xKW89KGSU8yOi6v1iW9xccs0m5hB35B3zX8Kha25dhBpVXrLlvP8Xf2y8MYIoYVaYurLLqSVmRoGMXOnaXxw3iX9ERMvuhj0PIPNPOK7ZJvN3en baccala@samsung
-    - ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC9S97gTUYfGLFR0ao29wcasi0FDPNQfocwogyXXZoo9aPyEQE2UzsG8geqlh34YVa5yP3Y5IELAfhEaIesM7tDktISIRXEqcGthP9NSlPm/nGeNq2xeUKoHw9gfB4UkT1sLPz2unQB9MK532O+blJqdSVXsAbi7atXqx+P16faz9+VU+uYP923s790tw6X27Udpg50Ie84DchmOup/lRXlemOb6Q3iz3bVyOg1/7KLwg4L7IGvyYwmtrhO6BAdZRGwYhptGHBovSXd+YoDUsEjul2KKsmvzWK7sYFiwE9ctxTZB2UT3KgughmWCzftoErG/LYZj/PgPHgiTGgRvVeF baccala@osito
-
-"""
+user_data = {'ssh_authorized_keys':
+             [ "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCj6Vc0dUbmLEXByfgwtbG0teq+lhn1ZeCpBp/Ll+yapeTbdP0AuA9iZrcIi4O25ucy+VaZDutj2noNvkcq8dPrCmveX0Zxbylia7rNbd91DPU/94JRidElJPzB5eueObqiVWNWu1cGP0WdaHbecWy0Xu4fq+FqJn3z99Cg4XDYVsfP9avin6McHAaYItTmZHAuHgfL6hJCw4Ju0I7OMAlXgeb9S50nYpzN8ItbRmNQDZC3wdPs5iTd0LgGG/0P7ixhTWDSg5DeQc6JJ2rYezyzc1Lek3lQuBK6FiuvEyd99H2FrowN0b/n1pTQd//pq1G0AcGiwl0ttZ5i2HMe8sab baccala@max",
+               "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCrP+7mipq2WDogHqJ4So8F4fwPNj87sfOuFh6c3Md5SHg3B3U29Mqu+MgVz9aZ60Nsfr5/blZA7Kjx0GeMHiZHnVf8hS4R8vx066Ck479ZL+6kXDijkxBTPQoTfpuRsqN+vhX5pS+WAPfgKl6pcRtonTMBY1dh/B+KQBhQ2KzdydpDz7dLQRmuKIKNvyNhs4CRS0P8oFZlmuvDjdmvkmKbyp06sZAFHbbWhLs0PHobItNDviwRrBg59tS9Dr40raGUrp3SIsaQTIT56zQAdVB36iZDqYbUf/rCizIcsoCWB76LW7JMvJot1NVKtN9D56ZCgXhW4IJ1dWw2bPY+6lz3 BrentBaccala@max",
+               "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCzuN81Hcxd5wpfT8JFzhFXG0JoyOpLAOGl6r0bb4iTt86VJMfvByJorKHVWi/Wp1qRqzAAeAnlSKRTm7CeIy744Y1/iaWQwDMkS+Sjwhib104sqM8EIFVVeiorvwPa8GbpdgxS6H6s5zO4mlnW5MdiV67jlyd0xWc3jDWCqwGLJBgYrJEuztQ5hlLDfliDSs8ZpSijgkROII2yORuU+YuVkHgFcmRDXnIKq7iL5xKW89KGSU8yOi6v1iW9xccs0m5hB35B3zX8Kha25dhBpVXrLlvP8Xf2y8MYIoYVaYurLLqSVmRoGMXOnaXxw3iX9ERMvuhj0PIPNPOK7ZJvN3en baccala@samsung",
+               "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC9S97gTUYfGLFR0ao29wcasi0FDPNQfocwogyXXZoo9aPyEQE2UzsG8geqlh34YVa5yP3Y5IELAfhEaIesM7tDktISIRXEqcGthP9NSlPm/nGeNq2xeUKoHw9gfB4UkT1sLPz2unQB9MK532O+blJqdSVXsAbi7atXqx+P16faz9+VU+uYP923s790tw6X27Udpg50Ie84DchmOup/lRXlemOb6Q3iz3bVyOg1/7KLwg4L7IGvyYwmtrhO6BAdZRGwYhptGHBovSXd+YoDUsEjul2KKsmvzWK7sYFiwE9ctxTZB2UT3KgughmWCzftoErG/LYZj/PgPHgiTGgRvVeF baccala@osito"]
+}
 
 meta_data_file = tempfile.NamedTemporaryFile(delete = False)
-meta_data_file.write(meta_data.encode('utf-8'))
+meta_data_file.write(yaml.dump(meta_data).encode('utf-8'))
 meta_data_file.close()
 
 user_data_file = tempfile.NamedTemporaryFile(delete = False)
-user_data_file.write(user_data.encode('utf-8'))
+user_data_file.write(("#cloud-config\n" + yaml.dump(user_data)).encode('utf-8'))
 user_data_file.close()
 
 import subprocess
