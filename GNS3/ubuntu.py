@@ -279,7 +279,7 @@ genisoimage_command = ["genisoimage", "-input-charset", "utf-8", "-o", "-", "-l"
                        "meta-data={}".format(meta_data_file.name),
                        "user-data={}".format(user_data_file.name)]
 
-genisoimage_proc = subprocess.Popen(genisoimage_command, stdout=subprocess.PIPE)
+genisoimage_proc = subprocess.Popen(genisoimage_command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
 
 isoimage = genisoimage_proc.stdout.read()
 
