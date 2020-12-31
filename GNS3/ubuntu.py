@@ -332,9 +332,11 @@ url = "http://{}/v2/projects/{}/links".format(gns3_server, project_id)
 
 link_obj = {'nodes' : [{'adapter_number' : 0,
                         'port_number' : 0,
+                        'label' : {'text' : 'ens3'},
                         'node_id' : ubuntu['node_id']},
                        {'adapter_number' : first_unoccupied_port[0],
                         'port_number' : first_unoccupied_port[1],
+                        'label' : {'text' : f'e{first_unoccupied_port[1]}'},
                         'node_id' : switches[0]}]}
 
 result = requests.post(url, auth=auth, data=json.dumps(link_obj))
