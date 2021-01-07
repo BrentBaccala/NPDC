@@ -102,12 +102,23 @@ project_id = None
 for project in result.json():
     if project['name'] == args.project:
         project_id = project['project_id']
+        project_status = project['status']
 
 if not project_id:
     print("Couldn't find project '{}'".format(args.project))
     exit(1)
 
 print("'{}' is {}".format(args.project, project_id))
+
+# Open the project, if needed
+
+if project_status != 'opened':
+    print("Opening project...")
+
+    url = "http://{}/v2/projects/{}/open".format(gns3_server, project_id)
+
+    result = requests.post(url, auth=auth, data=json.dumps({}))
+    result.raise_for_status()
 
 # Get the existing nodes and links in the project.
 #
