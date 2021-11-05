@@ -30,6 +30,12 @@
             "version": "Nov 03 2021 16:31",
             "md5sum": "a55ace00168949fb81953082af261b55",
             "filesize": 4545249280
+        },
+        {
+            "filename": "ubuntu-open-desktop-04-nov-2105.qcow2",
+            "version": "Nov 04 2021 21:05",
+            "md5sum": "80c98a860740c2d6d00df41c235a06a0",
+            "filesize": 4510515200
         }
     ],
     "versions": [
@@ -37,6 +43,12 @@
             "name": "1",
             "images": {
                 "hda_disk_image": "ubuntu-open-desktop-03-nov-1631.qcow2"
+            }
+        },
+        {
+            "name": "2",
+            "images": {
+                "hda_disk_image": "ubuntu-open-desktop-04-nov-2105.qcow2"
             }
         }
     ]
