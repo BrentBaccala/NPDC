@@ -6,6 +6,23 @@
 # release, the virtual memory size, the virtual disk size, and the
 # number of CPUs.
 #
+# RUNTIME DEPENDENCIES
+#
+# genisoimage must be installed
+#
+# USAGE
+#
+# 1. Authentication to GNS3 server
+#
+#    Provide one of the GNS3_CREDENTIAL_FILES in propfile format;
+#    minimal entries are host/port/user/password in the Server block:
+#
+#    [Server]
+#    host = localhost
+#    port = 3080
+#    user = admin
+#    password = password
+#
 # Can be passed a '-d' option to delete an existing "ubuntu" VM.
 #
 # We use an Ubuntu cloud image that comes with the cloud-init package
@@ -33,6 +50,7 @@ import os
 import time
 import tempfile
 import pprint
+import urllib.parse
 
 import socket
 import threading
@@ -44,7 +62,8 @@ import subprocess
 
 import configparser
 
-PROP_FILE = os.path.expanduser("~/.config/GNS3/2.2/gns3_server.conf")
+GNS3_CREDENTIAL_FILES = ["~/gns3_server.conf", "~/.config/GNS3/2.2/gns3_server.conf"]
+SSH_AUTHORIZED_KEYS_FILES = ['~/.ssh/id_rsa.pub', "~/.ssh/authorized_keys"]
 
 cloud_images = {
     20: 'ubuntu-20.04-server-cloudimg-amd64.img',
@@ -83,9 +102,17 @@ cloud_image = cloud_images[args.release]
 # Obtain the credentials needed to authenticate ourself to the GNS3 server
 
 config = configparser.ConfigParser()
-config.read(PROP_FILE)
+for propfilename in GNS3_CREDENTIAL_FILES:
+    propfilename = os.path.expanduser(propfilename)
+    if os.path.exists(propfilename):
+        config.read(propfilename)
+        break
+try:
+    gns3_server = config['Server']['host'] + ":" + config['Server']['port']
+except:
+    print('No GNS3 server/host/port configuration found')
+    exit(1)
 
-gns3_server = config['Server']['host'] + ":" + config['Server']['port']
 auth = HTTPBasicAuth(config['Server']['user'], config['Server']['password'])
 
 # Find the GNS3 project called project_name
@@ -120,6 +147,15 @@ if project_status != 'opened':
     result = requests.post(url, auth=auth, data=json.dumps({}))
     result.raise_for_status()
 
+# Find the available project files (doesn't seem to work)
+
+#url = "http://{}/v2/projects/{}/files".format(gns3_server, project_id)
+#url = "http://{}/v2/qemu/images".format(gns3_server)
+
+#result = requests.get(url, auth=auth)
+#result.raise_for_status()
+#print(result.json())
+
 # Get the existing nodes and links in the project.
 #
 # We'll need this information to find a free port on a switch
@@ -149,7 +185,7 @@ links = result.json()
 # GNS3 sometimes appends a number to the node name, so we identify our
 # node as any node whose name begins with args.name.
 
-ubuntus = [n['node_id'] for n in nodes if n['name'].startswith(args.name)]
+ubuntus = [n['node_id'] for n in nodes if n['name'] == args.name]
 
 if len(ubuntus) > 0:
     print("{} already exists as node {}".format(args.name, ubuntus[0]))
@@ -216,6 +252,7 @@ script_ip = get_ip()
 # variable is used to signal our main thread when they report.
 
 instances_reported = set()
+instance_content = {}
 instance_report_cv = threading.Condition()
 
 class RequestHandler(BaseHTTPRequestHandler):
@@ -230,6 +267,7 @@ class RequestHandler(BaseHTTPRequestHandler):
         with instance_report_cv:
             if not self.client_address[0] in instances_reported:
                 instances_reported.add(self.client_address[0])
+                instance_content[self.client_address[0]] = urllib.parse.parse_qs(content)
                 instance_report_cv.notify()
 
         self.send_response(200)
@@ -266,13 +304,64 @@ meta_data = {'instance-id' : 'ubuntu',
              'local-hostname' : args.name
 }
 
-user_data = {'ssh_authorized_keys':
-             [ "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCj6Vc0dUbmLEXByfgwtbG0teq+lhn1ZeCpBp/Ll+yapeTbdP0AuA9iZrcIi4O25ucy+VaZDutj2noNvkcq8dPrCmveX0Zxbylia7rNbd91DPU/94JRidElJPzB5eueObqiVWNWu1cGP0WdaHbecWy0Xu4fq+FqJn3z99Cg4XDYVsfP9avin6McHAaYItTmZHAuHgfL6hJCw4Ju0I7OMAlXgeb9S50nYpzN8ItbRmNQDZC3wdPs5iTd0LgGG/0P7ixhTWDSg5DeQc6JJ2rYezyzc1Lek3lQuBK6FiuvEyd99H2FrowN0b/n1pTQd//pq1G0AcGiwl0ttZ5i2HMe8sab baccala@max",
-               "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCrP+7mipq2WDogHqJ4So8F4fwPNj87sfOuFh6c3Md5SHg3B3U29Mqu+MgVz9aZ60Nsfr5/blZA7Kjx0GeMHiZHnVf8hS4R8vx066Ck479ZL+6kXDijkxBTPQoTfpuRsqN+vhX5pS+WAPfgKl6pcRtonTMBY1dh/B+KQBhQ2KzdydpDz7dLQRmuKIKNvyNhs4CRS0P8oFZlmuvDjdmvkmKbyp06sZAFHbbWhLs0PHobItNDviwRrBg59tS9Dr40raGUrp3SIsaQTIT56zQAdVB36iZDqYbUf/rCizIcsoCWB76LW7JMvJot1NVKtN9D56ZCgXhW4IJ1dWw2bPY+6lz3 BrentBaccala@max",
-               "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQCzuN81Hcxd5wpfT8JFzhFXG0JoyOpLAOGl6r0bb4iTt86VJMfvByJorKHVWi/Wp1qRqzAAeAnlSKRTm7CeIy744Y1/iaWQwDMkS+Sjwhib104sqM8EIFVVeiorvwPa8GbpdgxS6H6s5zO4mlnW5MdiV67jlyd0xWc3jDWCqwGLJBgYrJEuztQ5hlLDfliDSs8ZpSijgkROII2yORuU+YuVkHgFcmRDXnIKq7iL5xKW89KGSU8yOi6v1iW9xccs0m5hB35B3zX8Kha25dhBpVXrLlvP8Xf2y8MYIoYVaYurLLqSVmRoGMXOnaXxw3iX9ERMvuhj0PIPNPOK7ZJvN3en baccala@samsung",
-               "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQC9S97gTUYfGLFR0ao29wcasi0FDPNQfocwogyXXZoo9aPyEQE2UzsG8geqlh34YVa5yP3Y5IELAfhEaIesM7tDktISIRXEqcGthP9NSlPm/nGeNq2xeUKoHw9gfB4UkT1sLPz2unQB9MK532O+blJqdSVXsAbi7atXqx+P16faz9+VU+uYP923s790tw6X27Udpg50Ie84DchmOup/lRXlemOb6Q3iz3bVyOg1/7KLwg4L7IGvyYwmtrhO6BAdZRGwYhptGHBovSXd+YoDUsEjul2KKsmvzWK7sYFiwE9ctxTZB2UT3KgughmWCzftoErG/LYZj/PgPHgiTGgRvVeF baccala@osito"],
+# Obtain any credentials to authenticate ourself to the VM
 
+ssh_authorized_keys = []
+for keyfilename in SSH_AUTHORIZED_KEYS_FILES:
+    keyfilename = os.path.expanduser(keyfilename)
+    if os.path.exists(keyfilename):
+        with open(keyfilename) as f:
+            for l in f.read().split('\n'):
+                if l.startswith('ssh-'):
+                    ssh_authorized_keys.append(l)
+
+with open('opendesktop.sh') as f:
+    screen_script = f.read()
+
+home_once_script = f"""#!/bin/bash
+screen -dm bash -c /screen.sh
+"""
+
+once_script = f"""#!/bin/sh
+cd /home/ubuntu
+su ubuntu -c /home_once.sh
+"""
+
+# Shouldn't have to do this to get the network running on every reboot.
+#
+# This looks like a bug somewhere in Ubuntu/netplan/cloud-init.
+boot_script = f"""#!/bin/sh
+ip link set ens3 up
+dhclient ens3
+
+if which gnome-terminal; then
+    DISPLAY=:0 su --login --preserve-environment ubuntu -c gnome-terminal &
+fi
+"""
+
+# Putting files in /home/ubuntu cause that directory's permissions to change to root.root,
+# probably because it's being created too early in the boot process.  Avoid this.
+
+user_data = {'hostname': args.name,
+             'apt': {'http_proxy': 'http://osito.freesoft.org:3128'},
+             'ssh_authorized_keys': ssh_authorized_keys,
              'phone_home': {'url': notification_url},
+             'write_files' : [{'path': '/var/lib/cloud/scripts/per-once/once.sh',
+                               'permissions': '0755',
+                               'content': once_script
+                               },
+                              {'path': '/var/lib/cloud/scripts/per-boot/boot.sh',
+                               'permissions': '0755',
+                               'content': boot_script
+                               },
+                              {'path': '/home_once.sh',
+                               'permissions': '0755',
+                               'content': home_once_script
+                               },
+                              {'path': '/screen.sh',
+                               'permissions': '0755',
+                               'content': screen_script
+                               }],
 }
 
 meta_data_file = tempfile.NamedTemporaryFile(delete = False)
@@ -294,12 +383,20 @@ genisoimage_proc = subprocess.Popen(genisoimage_command, stdout=subprocess.PIPE,
 
 isoimage = genisoimage_proc.stdout.read()
 
+debug_isoimage = False
+if debug_isoimage:
+    with open('isoimage-debug.iso', 'wb') as f:
+        f.write(isoimage)
+
 os.remove(meta_data_file.name)
 os.remove(user_data_file.name)
 
 print("Uploading cloud-init configuration...")
 
-file_url = "http://{}/v2/projects/{}/files/config.iso".format(gns3_server, project_id)
+# files in the GNS3 directory take precedence over these project files,
+# so we need to make these file names unique
+cdrom_image = project_id + '_' + args.name + '.iso'
+file_url = "http://{}/v2/projects/{}/files/{}".format(gns3_server, project_id, cdrom_image)
 result = requests.post(file_url, auth=auth, data=isoimage)
 result.raise_for_status()
 
@@ -317,7 +414,7 @@ ubuntu_node = {
             "adapters": 1,
             "adapter_type" : "virtio-net-pci",
             "hda_disk_image": cloud_image,
-            "cdrom_image" : "config.iso",
+            "cdrom_image" : cdrom_image,
             "qemu_path": "/usr/bin/qemu-system-x86_64",
             "cpus": args.cpus,
             "ram": args.memory
@@ -391,5 +488,13 @@ with instance_report_cv:
         instance_report_cv.wait()
 
 # print(instances_reported)
+# print(instance_content)
 
 httpd.shutdown()
+
+# If you want to now auto-connect to the instance and watch its screen.sh script running
+
+ipaddr=list(instances_reported)[0]
+print(f'a cut-and-paste suggestion:   ssh -t ubuntu@{ipaddr} screen -rd')
+
+# You'll still need to ssh in with '-X', not to a screen session, to run Puppeteer tests

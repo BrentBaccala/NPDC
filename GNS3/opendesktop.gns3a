@@ -1,0 +1,43 @@
+{
+    "name": "Ubuntu Open Desktop",
+    "category": "guest",
+    "description": "Ubuntu 18 configured to automatically login 'ubuntu' on a GNOME desktop",
+    "vendor_name": "Canonical Inc.",
+    "vendor_url": "https://www.ubuntu.com",
+    "documentation_url": "https://help.ubuntu.com",
+    "product_name": "Ubuntu",
+    "product_url": "https://www.ubuntu.com/desktop",
+    "registry_version": 3,
+    "status": "stable",
+    "maintainer": "Brent Baccala",
+    "maintainer_email": "cosine@freesoft.org",
+    "usage": "open console after boot",
+    "port_name_format": "eth{0}",
+    "qemu": {
+        "adapter_type": "virtio-net-pci",
+        "adapters": 1,
+        "cpus": 2,
+        "ram": 8192,
+        "hda_disk_interface": "virtio",
+        "arch": "x86_64",
+        "console_type": "vnc",
+        "boot_priority": "c",
+        "kvm": "require"
+    },
+    "images": [
+        {
+            "filename": "ubuntu-open-desktop-03-nov-1631.qcow2",
+            "version": "Nov 03 2021 16:31",
+            "md5sum": "a55ace00168949fb81953082af261b55",
+            "filesize": 4545249280
+        }
+    ],
+    "versions": [
+        {
+            "name": "1",
+            "images": {
+                "hda_disk_image": "ubuntu-open-desktop-03-nov-1631.qcow2"
+            }
+        }
+    ]
+}
