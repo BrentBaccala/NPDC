@@ -4,7 +4,12 @@
 #
 # Install QEMU image files in GNS3 for global access from any project.
 #
-# Has to be run as gns3 user.
+# Has to be run as gns3 user.  Has to be run on the gns3server.
+#
+# Used to bypass normal upload procedure, which requires the client to
+# send the gns3server the entire file over a network connection.
+#
+# Maybe this could be better written as an upload script that would do just that.
 
 GNS3_HOME=$HOME/GNS3
 
