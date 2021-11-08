@@ -11,7 +11,7 @@
     "status": "stable",
     "maintainer": "Brent Baccala",
     "maintainer_email": "cosine@freesoft.org",
-    "usage": "open console after boot",
+    "usage": "open gns3 console after boot; ssh in with keys provided in user-data on an ISO image created with cloud-localds",
     "port_name_format": "eth{0}",
     "qemu": {
         "adapter_type": "virtio-net-pci",
@@ -24,116 +24,6 @@
         "boot_priority": "c",
         "kvm": "require"
     },
-    "images": [
-        {
-            "filename": "ubuntu-open-desktop-03-nov-1631.qcow2",
-            "version": "Nov 03 2021 16:31",
-            "md5sum": "a55ace00168949fb81953082af261b55",
-            "filesize": 4545249280
-        },
-        {
-            "filename": "ubuntu-open-desktop-04-nov-2105.qcow2",
-            "version": "Nov 04 2021 21:05",
-            "md5sum": "80c98a860740c2d6d00df41c235a06a0",
-            "filesize": 4510515200
-        },
-        {
-            "filename": "ubuntu-open-desktop-04-nov-2330.qcow2",
-            "version": "Nov 04 2021 23:30",
-            "md5sum": "d97f521a6396c8068f94f8c1f1bda0c8",
-            "filesize": 4556914688
-        },
-        {
-            "filename": "ubuntu-open-desktop-07-Nov-1726.qcow2",
-            "version": "Nov 07 2021 17:26",
-            "md5sum": "11cc1702509a5647a345032487ab6f9e",
-            "filesize": 3472228352
-        },
-        {
-            "filename": "ubuntu-open-desktop-07-Nov-1729.qcow2",
-            "version": "Nov 07 2021 17:29",
-            "md5sum": "11cc1702509a5647a345032487ab6f9e",
-            "filesize": 3472228352
-        },
-        {
-            "filename": "ubuntu-open-desktop-07-Nov-1811.qcow2",
-            "version": "Nov 07 2021 18:11",
-            "md5sum": "11cc1702509a5647a345032487ab6f9e",
-            "filesize": 3472228352
-        },
-        {
-            "filename": "ubuntu-open-desktop-07-Nov-1814.qcow2",
-            "version": "Nov 07 2021 18:14",
-            "md5sum": "35b45b363e806dd0463d38a074d6b808",
-            "filesize": 4385734656
-        },
-        {
-            "filename": "ubuntu-open-desktop-07-Nov-1916.qcow2",
-            "version": "Nov 07 2021 19:16",
-            "md5sum": "95c9a04f59a95f75eb1e40f79315dbf7",
-            "filesize": 4609474560
-        },
-        {
-            "filename": "ubuntu-open-desktop-07-Nov-2023.qcow2",
-            "version": "Nov 07 2021 20:23",
-            "md5sum": "4d1a78d757318d0248a52a93afb1c9f9",
-            "filesize": 4593680384
-        }
-    ],
-    "versions": [
-        {
-            "name": "1",
-            "images": {
-                "hda_disk_image": "ubuntu-open-desktop-03-nov-1631.qcow2"
-            }
-        },
-        {
-            "name": "2",
-            "images": {
-                "hda_disk_image": "ubuntu-open-desktop-04-nov-2105.qcow2"
-            }
-        },
-        {
-            "name": "3",
-            "images": {
-                "hda_disk_image": "ubuntu-open-desktop-04-nov-2330.qcow2"
-            }
-        },
-        {
-            "name": "4",
-            "images": {
-                "hda_disk_image": "ubuntu-open-desktop-07-Nov-1726.qcow2"
-            }
-        },
-        {
-            "name": "5",
-            "images": {
-                "hda_disk_image": "ubuntu-open-desktop-07-Nov-1729.qcow2"
-            }
-        },
-        {
-            "name": "6",
-            "images": {
-                "hda_disk_image": "ubuntu-open-desktop-07-Nov-1811.qcow2"
-            }
-        },
-        {
-            "name": "7",
-            "images": {
-                "hda_disk_image": "ubuntu-open-desktop-07-Nov-1814.qcow2"
-            }
-        },
-        {
-            "name": "8",
-            "images": {
-                "hda_disk_image": "ubuntu-open-desktop-07-Nov-1916.qcow2"
-            }
-        },
-        {
-            "name": "9",
-            "images": {
-                "hda_disk_image": "ubuntu-open-desktop-07-Nov-2023.qcow2"
-            }
-        }
-    ]
+    "images": [ ],
+    "versions": [ ]
 }
