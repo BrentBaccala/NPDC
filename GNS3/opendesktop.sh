@@ -33,5 +33,3 @@ sudo apt -y remove update-manager gnome-initial-setup
 sudo systemctl restart gdm3
 
 uptime
-
-exec bash

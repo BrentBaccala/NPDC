@@ -51,6 +51,8 @@ import time
 import tempfile
 import pprint
 import urllib.parse
+import datetime
+import hashlib
 
 import socket
 import threading
@@ -65,10 +67,24 @@ import configparser
 GNS3_CREDENTIAL_FILES = ["~/gns3_server.conf", "~/.config/GNS3/2.2/gns3_server.conf"]
 SSH_AUTHORIZED_KEYS_FILES = ['~/.ssh/id_rsa.pub', "~/.ssh/authorized_keys"]
 
+# Location of the GNS3 server.  Needed to copy disk files if building a GNS3 appliance.
+GNS3_HOME = '/home/gns3'
+
+GNS3_APPLIANCE_FILE = 'opendesktop.gns3a'
+
 cloud_images = {
     20: 'ubuntu-20.04-server-cloudimg-amd64.img',
     18: 'ubuntu-18.04-server-cloudimg-amd64.img'
 }
+
+# Utility function used when generating a GNS3 appliance
+
+def md5(fname):
+    hash_md5 = hashlib.md5()
+    with open(fname, "rb") as f:
+        for chunk in iter(lambda: f.read(4096), b""):
+            hash_md5.update(chunk)
+    return hash_md5.hexdigest()
 
 # Parse the command line options
 
@@ -91,6 +107,8 @@ parser.add_argument('--vnc', action="store_true",
                     help='use a VNC console (default is text console)')
 parser.add_argument('--ls', action="store_true",
                     help='list running nodes')
+parser.add_argument('--gns3-appliance', action="store_true",
+                    help='build a GNS3 appliance')
 parser.add_argument('-q', '--query', action="store_true",
                     help='query the existence of the nodes')
 parser.add_argument('-v', '--verbose', action="store_true",
@@ -189,15 +207,16 @@ ubuntus = [n['node_id'] for n in nodes if n['name'] == args.name]
 
 if len(ubuntus) > 0:
     print("{} already exists as node {}".format(args.name, ubuntus[0]))
+    node_url = "http://{}/v2/projects/{}/nodes/{}".format(gns3_server, project_id, ubuntus[0])
     if args.verbose:
         pprint.pprint(next(n for n in nodes if n['name'].startswith(args.name)))
     if args.delete:
         print("deleting {}...".format(ubuntus[0]))
-        node_url = "http://{}/v2/projects/{}/nodes/{}".format(gns3_server, project_id, ubuntus[0])
         result = requests.delete(node_url, auth=auth)
         result.raise_for_status()
         exit(0)
-    exit(1)
+    if not args.gns3_appliance:
+        exit(1)
 
 if args.delete:
     print("Found no {} node to delete".format(args.name))
@@ -317,6 +336,10 @@ for keyfilename in SSH_AUTHORIZED_KEYS_FILES:
 
 with open('opendesktop.sh') as f:
     screen_script = f.read()
+    if args.gns3_appliance:
+        screen_script += "\nsudo shutdown -h now\n"
+    else:
+        screen_script += "\nexec bash\n"
 
 home_once_script = f"""#!/bin/bash
 screen -dm bash -c /screen.sh
@@ -332,11 +355,39 @@ su ubuntu -c /home_once.sh
 # This looks like a bug somewhere in Ubuntu/netplan/cloud-init.
 boot_script = f"""#!/bin/sh
 ip link set ens3 up
-dhclient ens3
+dhclient ens3 &
 
 if which gnome-terminal; then
-    DISPLAY=:0 su --login --preserve-environment ubuntu -c gnome-terminal &
+    # race condition here if X11 server isn't listening for connections yet
+    su --login ubuntu -c "env DISPLAY=:0 gnome-terminal &"
 fi
+"""
+
+# This file is needed to make cloud-init run on every boot.
+#
+# See https://bugs.launchpad.net/cloud-init/+bug/1892171
+#
+# That bug's current status is 'triaged'.  This certainly isn't the
+# desired solution, but it works for now.
+#
+# The underlying problem is that GNS3 doesn't support cloud-init and
+# doesn't provide any way to feed cloud-init instance data to an
+# instance.  So we don't provide any cloud-init data on virtual CD-ROM
+# on boots of cloned instances, which would normally cause cloud-init
+# to not run.  The network wouldn't be setup properly and the per-boot
+# scripts wouldn't run.
+#
+# Setting datasource_list explicitly prevents cloud-init from trying
+# EC2, which causes a significant delay on boot if it isn't on EC2
+# (see text of 'dpkg-reconfigure cloud-init'), while allowing a user
+# to attach an ISO file which will get processed (that's NoCloud).
+
+ds_identity_cfg = """
+policy: enabled
+"""
+
+cloud_cfg = """
+datasource_list: [ NoCloud, None ]
 """
 
 # Putting files in /home/ubuntu cause that directory's permissions to change to root.root,
@@ -353,6 +404,14 @@ user_data = {'hostname': args.name,
                               {'path': '/var/lib/cloud/scripts/per-boot/boot.sh',
                                'permissions': '0755',
                                'content': boot_script
+                               },
+                              {'path': '/etc/cloud/ds-identify.cfg',
+                               'permissions': '0644',
+                               'content': ds_identity_cfg
+                               },
+                              {'path': '/etc/cloud/cloud.cfg.d/90_dpkg.cfg',
+                               'permissions': '0644',
+                               'content': cloud_cfg
                                },
                               {'path': '/home_once.sh',
                                'permissions': '0755',
@@ -498,3 +557,51 @@ ipaddr=list(instances_reported)[0]
 print(f'a cut-and-paste suggestion:   ssh -t ubuntu@{ipaddr} screen -rd')
 
 # You'll still need to ssh in with '-X', not to a screen session, to run Puppeteer tests
+
+# Optionally, the script can end by building a gns3 appliance.
+
+if len(ubuntus) > 0:
+    node_id = ubuntus[0]
+else:
+    node_id = ubuntu['node_id']
+
+if args.gns3_appliance:
+    # 1. Add shutdown to tne end of the per-once screen script
+    # 2. This script waits for shutdown
+    print("Waiting for node to shutdown...")
+    while True:
+        result = requests.get(node_url, auth=auth)
+        result.raise_for_status()
+        if result.json()['status'] == 'stopped':
+            break
+        time.sleep(10)
+
+    # 3. Keeps the node UUID
+    # 4. NEEDS NO SPECIAL FS PERMISSION IF RUN ON THE GNS3SERVER, SINCE GNS3 LEAVES FILES WORLD-READABLE BY DEFAULT
+    # 5. Copies disk UUID file from project uuid directory to pwd
+    print("Copying and rebasing disk image...")
+    disk_UUID_filename = os.path.join(GNS3_HOME, 'GNS3/projects/{}/project-files/qemu/{}/hda_disk.qcow2'.format(project_id, node_id))
+    now = datetime.datetime.now()
+    appliance_image_filename = now.strftime('ubuntu-open-desktop-%d-%h-%H%M.qcow2')
+    subprocess.run(['cp', disk_UUID_filename, appliance_image_filename]).check_returncode()
+    # 6. qemu-img rebase -b '' FILENAME
+    #    Can you skip this step?  Yes, but rebased file is just less than 1 GB bigger than the original, so that's all you save.
+    #    Plus, if you skip this, you have a file that can only be used on the same system, or one with an idential backing file.
+    subprocess.run(['qemu-img', 'rebase', '-b', "", appliance_image_filename]).check_returncode()
+    # 7. get length and md5sum of FILENAME
+    # 8. add that to a new, or append that to an existing, gns3 appliance file
+    if os.path.exists(GNS3_APPLIANCE_FILE):
+        print("Appending to GNS3 appliance file...")
+        with open(GNS3_APPLIANCE_FILE) as f:
+            gns3_appliance_json = json.load(f)
+    gns3_appliance_json['images'].append({'filename': appliance_image_filename,
+                                          'version': now.strftime('%h %d %Y %H:%M'),
+                                          'md5sum': md5(appliance_image_filename),
+                                          'filesize': os.stat(appliance_image_filename).st_size
+    })
+    gns3_appliance_json['versions'].append({'name': str(len(gns3_appliance_json['versions']) + 1),
+                                            'images': {'hda_disk_image': appliance_image_filename}
+    })
+    with open(GNS3_APPLIANCE_FILE, 'w') as f:
+        json.dump(gns3_appliance_json, f, indent=4)
+    # 9. optionally, check for write permission into GNS3_ROOT, and install FILENAME into the GNS3 server without upload
