@@ -337,12 +337,11 @@ for keyfilename in SSH_AUTHORIZED_KEYS_FILES:
                     ssh_authorized_keys.append(l)
 
 if args.boot_script:
-    with open('opendesktop.sh') as f:
-        screen_script = f.read()
-        if args.gns3_appliance:
-            screen_script += "\nsudo shutdown -h now\n"
-        else:
-            screen_script += "\nexec bash\n"
+    screen_script = args.boot_script.read()
+    if args.gns3_appliance:
+        screen_script += "\nsudo shutdown -h now\n"
+    else:
+        screen_script += "\nexec bash\n"
 
 home_once_script = f"""#!/bin/bash
 screen -dm bash -c /screen.sh
