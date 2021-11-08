@@ -109,6 +109,8 @@ parser.add_argument('--ls', action="store_true",
                     help='list running nodes')
 parser.add_argument('--gns3-appliance', action="store_true",
                     help='build a GNS3 appliance')
+parser.add_argument('--boot-script', type=lambda f: open(f), default=None,
+                    help="run a script in a screen session after boot")
 parser.add_argument('-q', '--query', action="store_true",
                     help='query the existence of the nodes')
 parser.add_argument('-v', '--verbose', action="store_true",
@@ -334,12 +336,13 @@ for keyfilename in SSH_AUTHORIZED_KEYS_FILES:
                 if l.startswith('ssh-'):
                     ssh_authorized_keys.append(l)
 
-with open('opendesktop.sh') as f:
-    screen_script = f.read()
-    if args.gns3_appliance:
-        screen_script += "\nsudo shutdown -h now\n"
-    else:
-        screen_script += "\nexec bash\n"
+if args.boot_script:
+    with open('opendesktop.sh') as f:
+        screen_script = f.read()
+        if args.gns3_appliance:
+            screen_script += "\nsudo shutdown -h now\n"
+        else:
+            screen_script += "\nexec bash\n"
 
 home_once_script = f"""#!/bin/bash
 screen -dm bash -c /screen.sh
@@ -359,7 +362,7 @@ dhclient ens3 &
 
 if which gnome-terminal; then
     # race condition here if X11 server isn't listening for connections yet
-    su --login ubuntu -c "env DISPLAY=:0 gnome-terminal &"
+    su --login ubuntu -c "env DISPLAY=:0 gnome-terminal --maximize &"
 fi
 """
 
@@ -397,31 +400,33 @@ user_data = {'hostname': args.name,
              'apt': {'http_proxy': 'http://osito.freesoft.org:3128'},
              'ssh_authorized_keys': ssh_authorized_keys,
              'phone_home': {'url': notification_url},
-             'write_files' : [{'path': '/var/lib/cloud/scripts/per-once/once.sh',
-                               'permissions': '0755',
-                               'content': once_script
-                               },
-                              {'path': '/var/lib/cloud/scripts/per-boot/boot.sh',
-                               'permissions': '0755',
-                               'content': boot_script
-                               },
-                              {'path': '/etc/cloud/ds-identify.cfg',
+             'write_files' : [{'path': '/etc/cloud/ds-identify.cfg',
                                'permissions': '0644',
                                'content': ds_identity_cfg
                                },
                               {'path': '/etc/cloud/cloud.cfg.d/90_dpkg.cfg',
                                'permissions': '0644',
                                'content': cloud_cfg
-                               },
-                              {'path': '/home_once.sh',
-                               'permissions': '0755',
-                               'content': home_once_script
-                               },
-                              {'path': '/screen.sh',
-                               'permissions': '0755',
-                               'content': screen_script
                                }],
 }
+
+if args.boot_script:
+    user_data['write_files'].extend([{'path': '/var/lib/cloud/scripts/per-once/once.sh',
+                                      'permissions': '0755',
+                                      'content': once_script
+                                     },
+                                     {'path': '/var/lib/cloud/scripts/per-boot/boot.sh',
+                                      'permissions': '0755',
+                                      'content': boot_script
+                                      },
+                                     {'path': '/home_once.sh',
+                                      'permissions': '0755',
+                                      'content': home_once_script
+                                      },
+                                     {'path': '/screen.sh',
+                                      'permissions': '0755',
+                                      'content': screen_script
+                                      }])
 
 meta_data_file = tempfile.NamedTemporaryFile(delete = False)
 meta_data_file.write(yaml.dump(meta_data).encode('utf-8'))
