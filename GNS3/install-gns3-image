@@ -1,0 +1,22 @@
+#!/bin/sh
+#
+# Usage: sudo su gns3 -c "install-gns3-image ubuntu-open-desktop-*.qcow2"
+#
+# Install QEMU image files in GNS3 for global access from any project.
+#
+# Has to be run as gns3 user.
+
+GNS3_HOME=$HOME/GNS3
+
+for FILE in "$@"; do
+    if [ -e $FILE ]; then
+        TARGET_FILE=$GNS3_HOME/images/QEMU/$FILE
+        if [ ! -e $TARGET_FILE ]; then
+            echo cp $FILE $GNS3_HOME/images/QEMU
+            if cp $FILE $GNS3_HOME/images/QEMU; then
+                echo md5sum $FILE
+                md5sum $FILE | cut -d ' ' -f 1 -z > $TARGET_FILE.md5sum
+            fi
+        fi
+    fi
+done
