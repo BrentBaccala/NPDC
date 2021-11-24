@@ -6,11 +6,21 @@
 # release, the virtual memory size, the virtual disk size, and the
 # number of CPUs.
 #
+# It will be configured to accept your ssh keys for ssh access,
+# and a GNU screen session will start as 'ubuntu' running a
+# specified boot script.
+#
+# It will give you a cut-and-paste suggestion to ssh into the VM and watch its boot script run.
+# If you request a GNS3 appliance, it will also shutdown the VM after the boot script finishes
+# and build a GNS3 appliance.  THIS REQUIRES READ ACCESS TO THE GNS3 SERVER'S DIRECTORY.
+#
 # RUNTIME DEPENDENCIES
 #
 # genisoimage must be installed
 #
 # USAGE
+#
+# ./ubuntu.py -n ubuntu -r 18 -s $((1024*1024)) --vnc --boot-script opendesktop.sh --gns3-appliance
 #
 # 1. Authentication to GNS3 server
 #
@@ -71,6 +81,20 @@ SSH_AUTHORIZED_KEYS_FILES = ['~/.ssh/id_rsa.pub', "~/.ssh/authorized_keys"]
 GNS3_HOME = '/home/gns3'
 
 GNS3_APPLIANCE_FILE = 'opendesktop.gns3a'
+
+# These are bootable images provided by Canonical, Inc, that have the cloud-init package
+# installed.  When booted in a VM, cloud-init will configure them based on configuration
+# provided (in our case) on a ISO image attached to a virtual CD-ROM device.
+#
+# Pick up the latest versions from here:
+#
+# https://cloud-images.ubuntu.com/releases/bionic/release/ubuntu-18.04-server-cloudimg-amd64.img
+# https://cloud-images.ubuntu.com/releases/focal/release/ubuntu-20.04-server-cloudimg-amd64.img
+#
+# Updated versions are released several times a month.  If you don't have the latest version,
+# don't worry, this file's cloud-init configuration will run a package update, but once the GNS3
+# appliance is built, it's not going to run again.  Just connect the new VM to the Internet and
+# run a package update.
 
 cloud_images = {
     20: 'ubuntu-20.04-server-cloudimg-amd64.img',
@@ -397,6 +421,7 @@ datasource_list: [ NoCloud, None ]
 
 user_data = {'hostname': args.name,
              'apt': {'http_proxy': 'http://osito.freesoft.org:3128'},
+             'package_upgrade': True,
              'ssh_authorized_keys': ssh_authorized_keys,
              'phone_home': {'url': notification_url},
              'write_files' : [{'path': '/etc/cloud/ds-identify.cfg',
@@ -608,4 +633,6 @@ if args.gns3_appliance:
     })
     with open(GNS3_APPLIANCE_FILE, 'w') as f:
         json.dump(gns3_appliance_json, f, indent=4)
+        # put a newline at the end of file, which json.dump doesn't do
+        print(file=f)
     # 9. optionally, check for write permission into GNS3_ROOT, and install FILENAME into the GNS3 server without upload
