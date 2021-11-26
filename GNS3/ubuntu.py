@@ -58,6 +58,7 @@ import json
 import yaml
 import os
 import time
+import shutil
 import tempfile
 import pprint
 import urllib.parse
@@ -613,10 +614,19 @@ if args.gns3_appliance:
     now = datetime.datetime.now()
     appliance_image_filename = now.strftime('ubuntu-open-desktop-%d-%h-%H%M.qcow2')
     subprocess.run(['cp', disk_UUID_filename, appliance_image_filename]).check_returncode()
-    # 6. qemu-img rebase -b '' FILENAME
+    # 6a. get a copy of the backing image and rebase it
+    #     from https://stackoverflow.com/a/39217788/1493790
+    url = "http://{}/v2/compute/qemu/images/{}".format(gns3_server, cloud_image)
+    with tempfile.NamedTemporaryFile() as tmp:
+        with requests.get(url, auth=auth, stream=True) as r:
+            shutil.copyfileobj(r.raw, tmp)
+        subprocess.run(['qemu-img', 'rebase', '-u', '-b', tmp.name, appliance_image_filename]).check_returncode()
+        subprocess.run(['qemu-img', 'rebase', '-b', "", appliance_image_filename]).check_returncode()
+    # 6b. rebase the image (need read permission on backing file)
     #    Can you skip this step?  Yes, but rebased file is just less than 1 GB bigger than the original, so that's all you save.
     #    Plus, if you skip this, you have a file that can only be used on the same system, or one with an idential backing file.
-    subprocess.run(['qemu-img', 'rebase', '-b', "", appliance_image_filename]).check_returncode()
+    #    Remember that those cloudimg files (the backing file) are updated by Canoncial every few days.
+    # subprocess.run(['qemu-img', 'rebase', '-b', "", appliance_image_filename]).check_returncode()
     # 7. get length and md5sum of FILENAME
     # 8. add that to a new, or append that to an existing, gns3 appliance file
     if os.path.exists(GNS3_APPLIANCE_FILE):
