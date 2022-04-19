@@ -12,6 +12,19 @@ sudo apt update
 sudo DEBIAN_FRONTEND=noninteractive apt -y install ubuntu-desktop
 sudo sed -i -e 's/#  Automatic/Automatic/' -e '/Automatic/s/user1/ubuntu/' /etc/gdm3/custom.conf
 
+# This will create a user service that auto-starts a terminal
+# This can be easily enabled/disabled with systemctl --user enable/disable initial-terminal
+
+mkdir -p /home/ubuntu/.config/systemd/user
+cat > /home/ubuntu/.config/systemd/user/initial-terminal.service <<EOF
+[Service]
+ExecStart=/usr/bin/gnome-terminal --maximize
+
+[Install]
+WantedBy=default.target
+EOF
+systemctl --user enable initial-terminal
+
 # Configure dconf to disable screen lock
 sudo mkdir -p /etc/dconf/profile/
 sudo tee /etc/dconf/profile/user <<EOF
