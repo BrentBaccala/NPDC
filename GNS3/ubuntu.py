@@ -398,7 +398,7 @@ else:
     proxy_environment_setting = ''
 
 home_once_script = f"""#!/bin/bash
-${proxy_environment_setting} screen -dm bash -c /screen.sh
+{proxy_environment_setting} screen -dm bash -c /screen.sh
 """
 
 once_script = f"""#!/bin/sh
