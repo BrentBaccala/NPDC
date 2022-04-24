@@ -421,7 +421,6 @@ datasource_list: [ NoCloud, None ]
 # probably because it's being created too early in the boot process.  Avoid this.
 
 user_data = {'hostname': args.name,
-             'apt': {'http_proxy': 'http://osito.freesoft.org:3128'},
              # don't do package_upgrade, because it delays phone_home until it's done,
              # so I've put an 'apt upgrade' at the beginning of the opendesktop.sh script
              # 'package_upgrade': True,
@@ -455,6 +454,19 @@ if args.boot_script:
                                       'content': screen_script
                                       }])
 
+# If the system we're running on is configured to use an apt proxy, use it for the GNS3 instance as well.
+#
+# This will break things if the GNS3 instance can't reach the proxy.
+
+apt_config_command = ['apt-config', '--format', '%f %v%n', 'dump']
+apt_config_proc = subprocess.Popen(apt_config_command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+for config_line in apt_config_proc.stdout.read().split('\n'):
+    key,value = config_line.split(' ', 1)
+    if key == 'Acquire::http::Proxy':
+        user_data['apt'] = {'http_proxy', value}
+
+# Generate the ISO image that will be used as a virtual CD-ROM to pass all this initialization data to cloud-init.
+
 meta_data_file = tempfile.NamedTemporaryFile(delete = False)
 meta_data_file.write(yaml.dump(meta_data).encode('utf-8'))
 meta_data_file.close()
@@ -462,8 +474,6 @@ meta_data_file.close()
 user_data_file = tempfile.NamedTemporaryFile(delete = False)
 user_data_file.write(("#cloud-config\n" + yaml.dump(user_data)).encode('utf-8'))
 user_data_file.close()
-
-import subprocess
 
 genisoimage_command = ["genisoimage", "-input-charset", "utf-8", "-o", "-", "-l",
                        "-relaxed-filenames", "-V", "cidata", "-graft-points",
