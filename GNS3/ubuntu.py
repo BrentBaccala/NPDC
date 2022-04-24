@@ -400,19 +400,6 @@ cd /home/ubuntu
 su ubuntu -c /home_once.sh
 """
 
-# Shouldn't have to do this to get the network running on every reboot.
-#
-# This looks like a bug somewhere in Ubuntu/netplan/cloud-init.
-boot_script = f"""#!/bin/sh
-ip link set ens3 up
-dhclient ens3 &
-
-if which gnome-terminal; then
-    # race condition here if X11 server isn't listening for connections yet
-    su --login ubuntu -c "env DISPLAY=:0 gnome-terminal --maximize &"
-fi
-"""
-
 # This file is needed to make cloud-init run on every boot.
 #
 # See https://bugs.launchpad.net/cloud-init/+bug/1892171
@@ -464,10 +451,6 @@ if args.boot_script:
                                       'permissions': '0755',
                                       'content': once_script
                                      },
-                                     {'path': '/var/lib/cloud/scripts/per-boot/boot.sh',
-                                      'permissions': '0755',
-                                      'content': boot_script
-                                      },
                                      {'path': '/home_once.sh',
                                       'permissions': '0755',
                                       'content': home_once_script
