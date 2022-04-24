@@ -349,6 +349,17 @@ sys.excepthook = my_except_hook
 
 threading.Thread(target=httpd.serve_forever).start()
 
+# Find out if the system we're running on is configured to use an apt proxy.
+
+apt_proxy = None
+apt_config_command = ['apt-config', '--format', '%f %v%n', 'dump']
+apt_config_proc = subprocess.Popen(apt_config_command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+for config_line in apt_config_proc.stdout.read().decode().split('\n'):
+    if ' ' in config_line:
+        key,value = config_line.split(' ', 1)
+        if key == 'Acquire::http::Proxy':
+            apt_proxy = value
+
 # Create an ISO image containing the boot configuration and upload it
 # to the GNS3 project.  We write the config to a temporary file,
 # convert it to ISO image, then post the ISO image to GNS3.
@@ -372,6 +383,9 @@ for keyfilename in SSH_AUTHORIZED_KEYS_FILES:
 
 if args.boot_script:
     screen_script = args.boot_script.read()
+    # use the host's apt proxy (if any) for the boot script
+    if apt_proxy:
+        screen_script = f'export http_proxy="{apt_proxy}"\n' + screen_script
     if args.gns3_appliance:
         screen_script += "\nsudo shutdown -h now\n"
     else:
@@ -465,15 +479,17 @@ if args.boot_script:
 
 # If the system we're running on is configured to use an apt proxy, use it for the GNS3 instance as well.
 #
-# This will break things if the GNS3 instance can't reach the proxy.
+# This will break things if the GNS3 instance can't reach the proxy, so I use it for the initial
+# installation, but don't set it as the default for later cloned instances.
 
-apt_config_command = ['apt-config', '--format', '%f %v%n', 'dump']
-apt_config_proc = subprocess.Popen(apt_config_command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-for config_line in apt_config_proc.stdout.read().decode().split('\n'):
-    if ' ' in config_line:
-        key,value = config_line.split(' ', 1)
-        if key == 'Acquire::http::Proxy':
-            user_data['apt'] = {'http_proxy', value}
+if apt_proxy:
+    # this proxy is used by cloud-init
+    user_data['apt'] = {'http_proxy', value}
+    # this proxy would be used for later cloned instances
+    # user_data['write_files'].append({'path': '/etc/apt/apt.conf.d/90proxy',
+    #                                  'permissions': '0644',
+    #                                  'content': f'Acquire::http::Proxy "{value}"\n'
+    #                                 })
 
 # Generate the ISO image that will be used as a virtual CD-ROM to pass all this initialization data to cloud-init.
 
