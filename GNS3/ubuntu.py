@@ -422,7 +422,9 @@ datasource_list: [ NoCloud, None ]
 
 user_data = {'hostname': args.name,
              'apt': {'http_proxy': 'http://osito.freesoft.org:3128'},
-             'package_upgrade': True,
+             # don't do package_upgrade, because it delays phone_home until it's done,
+             # so I've put an 'apt upgrade' at the beginning of the opendesktop.sh script
+             # 'package_upgrade': True,
              'ssh_authorized_keys': ssh_authorized_keys,
              'phone_home': {'url': notification_url},
              'write_files' : [{'path': '/etc/cloud/ds-identify.cfg',
