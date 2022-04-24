@@ -6,7 +6,7 @@
 # running per-once scripts or even phone_home notifying.
 
 sudo apt update
-sudo apt upgrade
+sudo DEBIAN_FRONTEND=noninteractive apt -y upgrade
 
 # This will install the GNOME desktop so that it automatically logs in the user 'ubuntu'
 
