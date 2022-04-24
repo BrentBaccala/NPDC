@@ -91,6 +91,7 @@ GNS3_APPLIANCE_FILE = 'opendesktop.gns3a'
 #
 # https://cloud-images.ubuntu.com/releases/bionic/release/ubuntu-18.04-server-cloudimg-amd64.img
 # https://cloud-images.ubuntu.com/releases/focal/release/ubuntu-20.04-server-cloudimg-amd64.img
+# https://cloud-images.ubuntu.com/releases/jammy/release/ubuntu-22.04-server-cloudimg-amd64.img
 #
 # Updated versions are released several times a month.  If you don't have the latest version,
 # don't worry, this file's cloud-init configuration will run a package update, but once the GNS3
@@ -98,6 +99,7 @@ GNS3_APPLIANCE_FILE = 'opendesktop.gns3a'
 # run a package update.
 
 cloud_images = {
+    22: 'ubuntu-22.04-server-cloudimg-amd64.img',
     20: 'ubuntu-20.04-server-cloudimg-amd64.img',
     18: 'ubuntu-18.04-server-cloudimg-amd64.img'
 }
@@ -159,6 +161,13 @@ except:
     exit(1)
 
 auth = HTTPBasicAuth(config['Server']['user'], config['Server']['password'])
+
+# Make sure the cloud image exists on the GNS3 server
+
+url = "http://{}/v2/compute/qemu/images/{}".format(gns3_server, cloud_image)
+if not requests.head(url, auth=auth).ok:
+    print(f"{cloud_image} isn't available on {gns3_server}")
+    exit(1)
 
 # Find the GNS3 project called project_name
 
