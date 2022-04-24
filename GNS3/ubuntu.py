@@ -460,7 +460,7 @@ if args.boot_script:
 
 apt_config_command = ['apt-config', '--format', '%f %v%n', 'dump']
 apt_config_proc = subprocess.Popen(apt_config_command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-for config_line in apt_config_proc.stdout.read().split('\n'):
+for config_line in apt_config_proc.stdout.read().decode().split('\n'):
     key,value = config_line.split(' ', 1)
     if key == 'Acquire::http::Proxy':
         user_data['apt'] = {'http_proxy', value}
