@@ -386,16 +386,19 @@ for keyfilename in SSH_AUTHORIZED_KEYS_FILES:
 
 if args.boot_script:
     screen_script = args.boot_script.read()
-    # use the host's apt proxy (if any) for the boot script
-    if apt_proxy:
-        screen_script = f'export http_proxy="{apt_proxy}"\n' + screen_script
     if args.gns3_appliance:
         screen_script += "\nsudo shutdown -h now\n"
     else:
         screen_script += "\nexec bash\n"
 
+# use the host's apt proxy (if any) for the boot script
+if apt_proxy:
+    proxy_environment_setting = f'http_proxy="{apt_proxy}"'
+else:
+    proxy_environment_setting = ''
+
 home_once_script = f"""#!/bin/bash
-screen -dm bash -c /screen.sh
+${proxy_environment_setting} screen -dm bash -c /screen.sh
 """
 
 once_script = f"""#!/bin/sh

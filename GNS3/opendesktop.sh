@@ -4,13 +4,15 @@
 
 # I don't do this apt stuff with cloud-init because it waits for the packages to be installed before
 # running per-once scripts or even phone_home notifying.
+#
+# The environment is preserved with -E to pass along http_proxy, if it is set
 
-sudo apt update
-sudo DEBIAN_FRONTEND=noninteractive apt -y upgrade
+sudo -E apt update
+sudo -E DEBIAN_FRONTEND=noninteractive apt -y upgrade
 
 # This will install the GNOME desktop so that it automatically logs in the user 'ubuntu'
 
-sudo DEBIAN_FRONTEND=noninteractive apt -y install ubuntu-desktop
+sudo -E DEBIAN_FRONTEND=noninteractive apt -y install ubuntu-desktop
 sudo sed -i -e 's/#  Automatic/Automatic/' -e '/Automatic/s/user1/ubuntu/' /etc/gdm3/custom.conf
 
 # This will auto-start a terminal
