@@ -163,9 +163,12 @@ except:
 auth = HTTPBasicAuth(config['Server']['user'], config['Server']['password'])
 
 # Make sure the cloud image exists on the GNS3 server
+#
+# GNS3 doesn't seem to support a HEAD method on its images, so we get
+# a directory of all of them and search for the one we want
 
-url = "http://{}/v2/compute/qemu/images/{}".format(gns3_server, cloud_image)
-if not requests.head(url, auth=auth).ok:
+url = "http://{}/v2/compute/qemu/images".format(gns3_server)
+if not any (f for f in requests.get(url, auth=auth).json() if f['filename'] == cloud_image):
     print(f"{cloud_image} isn't available on {gns3_server}")
     exit(1)
 
