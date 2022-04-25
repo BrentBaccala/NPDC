@@ -44,7 +44,7 @@ if 'images' in gns3_appliance_json:
 if 'versions' in gns3_appliance_json:
     for item in gns3_appliance_json['versions']:
         if item['name'] == args.name:
-            gns3_appliance_json['version'].remove(item)
+            gns3_appliance_json['versions'].remove(item)
 
 gns3_appliance_json['images'].append({'filename': appliance_image_filename,
                                       'version': '1',
