@@ -29,13 +29,25 @@ args = parser.parse_args()
 
 appliance_image_filename = args.filename[0]
 
+gns3_appliance_json = {}
+
 if os.path.exists(GNS3_APPLIANCE_FILE):
     print("Appending to GNS3 appliance file...")
     with open(GNS3_APPLIANCE_FILE) as f:
         gns3_appliance_json = json.load(f)
 
+if 'images' in gns3_appliance_json:
+    for item in gns3_appliance_json['images']:
+        if item['filename'] == appliance_image_filename:
+            gns3_appliance_json['images'].remove(item)
+
+if 'versions' in gns3_appliance_json:
+    for item in gns3_appliance_json['versions']:
+        if item['name'] == args.name:
+            gns3_appliance_json['version'].remove(item)
+
 gns3_appliance_json['images'].append({'filename': appliance_image_filename,
-                                      'version': 1,
+                                      'version': '1',
                                       'md5sum': md5(appliance_image_filename),
                                       'filesize': os.stat(appliance_image_filename).st_size
 })
