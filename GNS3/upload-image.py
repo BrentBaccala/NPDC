@@ -42,11 +42,16 @@ group.add_argument('--ls', action="store_true",
                     help='list existing images')
 group.add_argument('filename', type=str, nargs='?',
                     help='filename to upload')
+parser.add_argument('--configfile', type=str,
+                    help='config file to use')
 parser.add_argument('--overwrite', action="store_true",
                     help='overwrite existing image')
 args = parser.parse_args()
 
 # Obtain the credentials needed to authenticate ourself to the GNS3 server
+
+if args.configfile:
+    GNS3_CREDENTIAL_FILES = [args.configfile]
 
 config = configparser.ConfigParser()
 for propfilename in GNS3_CREDENTIAL_FILES:
