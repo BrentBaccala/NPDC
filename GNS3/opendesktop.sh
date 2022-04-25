@@ -15,6 +15,13 @@ sudo -E DEBIAN_FRONTEND=noninteractive apt -y upgrade
 sudo -E DEBIAN_FRONTEND=noninteractive apt -y install ubuntu-desktop
 sudo sed -i -e 's/#  Automatic/Automatic/' -e '/Automatic/s/user1/ubuntu/' /etc/gdm3/custom.conf
 
+# There's a bug in earlier versions of cloud-init that prevents proper network configuration
+# by not regenerating /etc/netplan/50-cloud-init.yaml when the mac address has changed.
+# Avoid this problem by deleting the lines from that file that match the mac address.
+# Ubuntu 18 needs this fix; Ubuntu 20 does not.
+
+sudo sed -i -e '/macaddress/d' -e '/match/d' -e '/set-name/d'  /etc/netplan/50-cloud-init.yaml
+
 # This will auto-start a terminal
 
 mkdir -p /home/ubuntu/.config/autostart
