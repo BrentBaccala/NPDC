@@ -440,6 +440,10 @@ datasource_list: [ NoCloud, None ]
 # probably because it's being created too early in the boot process.  Avoid this.
 
 user_data = {'hostname': args.name,
+             # default is use a disk file as the dhcp-identifier, which causes all cloned
+             # images to use the same dhcp-identifier and get the same IP address,
+             # so configure the dhcp-identifier to be the instance's MAC address
+             'network': {'version': 2, 'ethernets': {'ens3': {'dhcp4': 'on', 'dhcp-identifier': 'mac'}}},
              # don't do package_upgrade, because it delays phone_home until it's done,
              # so I've put an 'apt upgrade' at the beginning of the opendesktop.sh script
              # 'package_upgrade': True,
