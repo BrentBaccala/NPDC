@@ -146,6 +146,9 @@ args = parser.parse_args()
 
 cloud_image = cloud_images[args.release]
 
+if args.gns3_appliance:
+    print("WARNING: --gns3-appliance currently has a serious problem.  See comments in script.")
+
 # Obtain the credentials needed to authenticate ourself to the GNS3 server
 
 config = configparser.ConfigParser()
@@ -621,6 +624,19 @@ if len(ubuntus) > 0:
     node_id = ubuntus[0]
 else:
     node_id = ubuntu['node_id']
+
+# WARNING
+#
+# Building a GNS3 appliance using this code, especially for large virtual disks, is currently broken.
+# You'll end up with an appliance that burns through large amounts of disk space after it boots.
+#
+# See https://unix.stackexchange.com/questions/700050
+#
+# Instead of specifying --gns3-appliance, you need to wait until the background lazy_itable_init thread
+# is finished, then shutdown the instance, zerofree the disk (a bug in lazy_itable_init causes it to write trash
+# into unused disk blocks), and then rebase and build the appliance using these procedure below.
+#
+# I figure out when the lazy_itable_init thread is finished by watching the disk image until its size stops changing.
 
 if args.gns3_appliance:
     # 1. Add shutdown to tne end of the per-once screen script
