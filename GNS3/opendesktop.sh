@@ -15,13 +15,6 @@ sudo -E DEBIAN_FRONTEND=noninteractive apt -y upgrade
 sudo -E DEBIAN_FRONTEND=noninteractive apt -y install ubuntu-desktop
 sudo sed -i -e 's/#  Automatic/Automatic/' -e '/Automatic/s/user1/ubuntu/' /etc/gdm3/custom.conf
 
-# There's a bug in earlier versions of cloud-init that prevents proper network configuration
-# by not regenerating /etc/netplan/50-cloud-init.yaml when the mac address has changed.
-# Avoid this problem by deleting the lines from that file that match the mac address.
-# Ubuntu 18 needs this fix; Ubuntu 20 does not.
-
-sudo sed -i -e '/macaddress/d' -e '/match/d' -e '/set-name/d'  /etc/netplan/50-cloud-init.yaml
-
 # This will auto-start a terminal
 
 mkdir -p /home/ubuntu/.config/autostart
@@ -49,5 +42,28 @@ sudo systemctl restart gdm3
 
 # remove the installation scripts (including this one)
 sudo rm /home_once.sh /screen.sh
+
+# cloud-init will keep reusing the same instance-id on every copy of
+# the appliance, which creates IP address conflicts because the
+# network isn't properly re-configured.  Until this is fixed,
+# disable cloud-init and configure the network with netplan.
+
+# Use the instance's MAC address to identify itself to dhcp, not the
+# hostname, which will probably be 'ubuntu', and use RFC 7217 to
+# generate IPv6 addresses, because web browsers are starting to filter
+# out the older eui64 RFC 4291 addresses.
+
+sudo touch /etc/cloud/cloud-init.disabled
+sudo rm /etc/netplan/50-cloud-init.yaml
+sudo tee /etc/netplan/config.yaml <<EOF
+network:
+    renderer: NetworkManager
+    ethernets:
+        ens3:
+            dhcp4: true
+            dhcp-identifier: mac
+            ipv6-address-generation: stable-privacy
+    version: 2
+EOF
 
 uptime
