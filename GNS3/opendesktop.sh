@@ -2,6 +2,12 @@
 #
 # This is a per-once script, i.e, it doesn't run after the first time the VM boots.
 
+# Speed up zero'ing inode tables, because I want to wait for this to finish before
+# creating the appliance, due to a probable kernel bug that fills the empty disk
+# blocks with trash.
+
+sudo mount -o remount,init_itable=0 /
+
 # I don't do this apt stuff with cloud-init because it waits for the packages to be installed before
 # running per-once scripts or even phone_home notifying.
 #
