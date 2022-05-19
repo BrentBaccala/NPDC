@@ -1,7 +1,7 @@
 {
     "name": "Ubuntu Open Desktop",
     "category": "guest",
-    "description": "Ubuntu 18 configured to automatically login 'ubuntu' on a GNOME desktop",
+    "description": "Ubuntu configured to automatically login 'ubuntu' on a GNOME desktop",
     "vendor_name": "Canonical Inc.",
     "vendor_url": "https://www.ubuntu.com",
     "documentation_url": "https://help.ubuntu.com",
@@ -11,7 +11,7 @@
     "status": "stable",
     "maintainer": "Brent Baccala",
     "maintainer_email": "cosine@freesoft.org",
-    "usage": "open gns3 console after boot; ssh in with keys provided in user-data on an ISO image created with cloud-localds",
+    "usage": "open gns3 console after boot; ssh in with keys provided when appliance was generated",
     "port_name_format": "eth{0}",
     "qemu": {
         "adapter_type": "virtio-net-pci",
