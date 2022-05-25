@@ -409,36 +409,6 @@ cd /home/ubuntu
 su ubuntu -c /home_once.sh
 """
 
-# This file is needed to make cloud-init run on every boot.
-#
-# See https://bugs.launchpad.net/cloud-init/+bug/1892171
-#
-# That bug's current status is 'triaged'.  This certainly isn't the
-# desired solution, but it works for now.
-#
-# The underlying problem is that GNS3 doesn't support cloud-init and
-# doesn't provide any way to feed cloud-init instance data to an
-# instance.  So we don't provide any cloud-init data on virtual CD-ROM
-# on boots of cloned instances, which would normally cause cloud-init
-# to not run.  The network wouldn't be setup properly and the per-boot
-# scripts wouldn't run.
-#
-# Setting datasource_list explicitly prevents cloud-init from trying
-# EC2, which causes a significant delay on boot if it isn't on EC2
-# (see text of 'dpkg-reconfigure cloud-init'), while allowing a user
-# to attach an ISO file which will get processed (that's NoCloud).
-
-ds_identity_cfg = """
-policy: enabled
-"""
-
-cloud_cfg = """
-datasource_list: [ NoCloud, None ]
-"""
-
-# Putting files in /home/ubuntu cause that directory's permissions to change to root.root,
-# probably because it's being created too early in the boot process.  Avoid this.
-
 user_data = {'hostname': args.name,
              # default is use a disk file as the dhcp-identifier, which causes all cloned
              # images to use the same dhcp-identifier and get the same IP address,
@@ -449,15 +419,11 @@ user_data = {'hostname': args.name,
              # 'package_upgrade': True,
              'ssh_authorized_keys': ssh_authorized_keys,
              'phone_home': {'url': notification_url},
-             'write_files' : [{'path': '/etc/cloud/ds-identify.cfg',
-                               'permissions': '0644',
-                               'content': ds_identity_cfg
-                               },
-                              {'path': '/etc/cloud/cloud.cfg.d/90_dpkg.cfg',
-                               'permissions': '0644',
-                               'content': cloud_cfg
-                               }],
+             'write_files' : [],
 }
+
+# Putting files in /home/ubuntu cause that directory's permissions to change to root.root,
+# probably because it's being created too early in the boot process.  Put files in / to avoid this.
 
 if args.boot_script:
     user_data['write_files'].extend([{'path': '/var/lib/cloud/scripts/per-once/once.sh',
@@ -638,7 +604,7 @@ else:
     node_id = ubuntu['node_id']
 
 if args.gns3_appliance:
-    # 1. Add shutdown to tne end of the per-once screen script
+    # 1. Add shutdown to the end of the per-once screen script
     # 2. This script waits for shutdown
     print("Waiting for node to shutdown...")
     while True:
@@ -669,22 +635,9 @@ if args.gns3_appliance:
     #    Plus, if you skip this, you have a file that can only be used on the same system, or one with an idential backing file.
     #    Remember that those cloudimg files (the backing file) are updated by Canoncial every few days.
     # subprocess.run(['qemu-img', 'rebase', '-b', "", appliance_image_filename]).check_returncode()
-    # 7. get length and md5sum of FILENAME
-    # 8. add that to a new, or append that to an existing, gns3 appliance file
-    if os.path.exists(GNS3_APPLIANCE_FILE):
-        print("Appending to GNS3 appliance file...")
-        with open(GNS3_APPLIANCE_FILE) as f:
-            gns3_appliance_json = json.load(f)
-    gns3_appliance_json['images'].append({'filename': appliance_image_filename,
-                                          'version': now.strftime('%h %d %Y %H:%M'),
-                                          'md5sum': md5(appliance_image_filename),
-                                          'filesize': os.stat(appliance_image_filename).st_size
-    })
-    gns3_appliance_json['versions'].append({'name': str(len(gns3_appliance_json['versions']) + 1),
-                                            'images': {'hda_disk_image': appliance_image_filename}
-    })
-    with open(GNS3_APPLIANCE_FILE, 'w') as f:
-        json.dump(gns3_appliance_json, f, indent=4)
-        # put a newline at the end of file, which json.dump doesn't do
-        print(file=f)
-    # 9. optionally, check for write permission into GNS3_ROOT, and install FILENAME into the GNS3 server without upload
+    print("New appliance image created:", appliance_image_filename)
+    # Final steps not done by this script:
+    # 7. delete the VM (default name 'ubuntu') used by this script
+    # 8. add-appliance.py (add the newly created image to the appliance file)
+    # 9. upload-image.py (copy the new image to the GNS3 server)
+    # 10. import the appliance in the GNS3 GUI
