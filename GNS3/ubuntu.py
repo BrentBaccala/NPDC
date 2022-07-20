@@ -446,7 +446,7 @@ if args.boot_script:
 
 if apt_proxy:
     # this proxy is used by cloud-init
-    user_data['apt'] = {'http_proxy', value}
+    user_data['apt'] = {'http_proxy': apt_proxy}
     # this proxy would be used for later cloned instances
     # user_data['write_files'].append({'path': '/etc/apt/apt.conf.d/90proxy',
     #                                  'permissions': '0644',
