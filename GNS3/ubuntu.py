@@ -142,6 +142,8 @@ parser.add_argument('-q', '--query', action="store_true",
                     help='query the existence of the nodes')
 parser.add_argument('-v', '--verbose', action="store_true",
                     help='print the JSON node structure')
+parser.add_argument('--debug', action="store_true",
+                    help='allow console login with username ubuntu and password ubuntu')
 args = parser.parse_args()
 
 cloud_image = cloud_images[args.release]
@@ -369,9 +371,7 @@ for config_line in apt_config_proc.stdout.read().decode().split('\n'):
 
 print("Building cloud-init configuration...")
 
-meta_data = {'instance-id' : 'ubuntu',
-             'local-hostname' : args.name
-}
+meta_data = {'instance-id' : 'ubuntu'}
 
 # Obtain any credentials to authenticate ourself to the VM
 
@@ -410,36 +410,18 @@ su ubuntu -c /home_once.sh
 
 systemd_service = f"""[Unit]
 Description=Assign system-uuid as cloud-init instance-id
+DefaultDependencies=no
 After=systemd-remount-fs.service
 Before=cloud-init-local.service
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=cloud-init.target
 
 [Service]
 Type=oneshot
+RemainAfterExit=yes
 ExecStart=bash -c "echo instance-id: $(dmidecode -s system-uuid) > /var/lib/cloud/seed/nocloud/meta-data"
-ExecStart=bash -c "echo local-hostname: {args.name} >> /var/lib/cloud/seed/nocloud/meta-data"
 """
-
-user_data = {'hostname': args.name,
-             # don't do package_upgrade, because it delays phone_home until it's done,
-             # so I've put an 'apt upgrade' at the beginning of the opendesktop.sh script
-             # 'package_upgrade': True,
-             'ssh_authorized_keys': ssh_authorized_keys,
-             'phone_home': {'url': notification_url},
-             'write_files' : [],
-             'runcmd' : ['systemctl enable assign_cloudinit_instanceid.service']
-}
-
-if True:
-    user_data['users'] = [{'name': 'ubuntu',
-                           'plain_text_passwd': 'ubuntu',
-                           'ssh_authorized_keys': ssh_authorized_keys,
-                           'lock_passwd': False,
-                           'shell': '/bin/bash',
-                           'sudo': 'ALL=(ALL) NOPASSWD:ALL',
-    }]
 
 # default is use a disk file as the dhcp-identifier, which causes all cloned
 # images to use the same dhcp-identifier and get the same IP address,
@@ -461,6 +443,45 @@ network_config = {'version': 2,
 #                            'ipv6-address-generation': 'stable-privacy',
                   }}}
 
+user_data = {'hostname': args.name,
+             # don't do package_upgrade, because it delays phone_home until it's done,
+             # so I've put an 'apt upgrade' at the beginning of the opendesktop.sh script
+             # 'package_upgrade': True,
+             'ssh_authorized_keys': ssh_authorized_keys,
+             'phone_home': {'url': notification_url},
+             'write_files' : [
+                 {'path': '/lib/systemd/system/assign_cloudinit_instanceid.service',
+                  'permissions': '0644',
+                  'content': systemd_service
+                 },
+                 # user-data and meta-data have to be present for cloud-init to identify the
+                 # NoCloud data source as present, and this check is made quite early during boot,
+                 # in particular before systemd unit files (like assign_cloudinit_instanceid) are run
+                 {'path': '/var/lib/cloud/seed/nocloud/user-data',
+                  'permissions': '0644',
+                  'content': ''
+                 },
+                 {'path': '/var/lib/cloud/seed/nocloud/meta-data',
+                  'permissions': '0644',
+                  'content': ''
+                 },
+                 {'path': '/var/lib/cloud/seed/nocloud/network-config',
+                  'permissions': '0644',
+                  'content': yaml.dump(network_config)
+                 },
+             ],
+             'runcmd' : ['systemctl enable assign_cloudinit_instanceid.service']
+}
+
+if args.debug:
+    user_data['users'] = [{'name': 'ubuntu',
+                           'plain_text_passwd': 'ubuntu',
+                           'ssh_authorized_keys': ssh_authorized_keys,
+                           'lock_passwd': False,
+                           'shell': '/bin/bash',
+                           'sudo': 'ALL=(ALL) NOPASSWD:ALL',
+    }]
+
 # Putting files in /home/ubuntu cause that directory's permissions to change to root.root,
 # probably because it's being created too early in the boot process.  Put files in / to avoid this.
 
@@ -469,25 +490,6 @@ if args.boot_script:
                                       'permissions': '0755',
                                       'content': once_script
                                      },
-                                     {'path': '/var/lib/cloud/seed/nocloud/network-config',
-                                      'permissions': '0644',
-                                      'content': yaml.dump(network_config)
-                                      },
-                                     {'path': '/lib/systemd/system/assign_cloudinit_instanceid.service',
-                                      'permissions': '0644',
-                                      'content': systemd_service
-                                      },
-                                     # user-data and meta-data have to be present for cloud-init to identify the
-                                     # NoCloud data source as present, and this check is made quite early during boot,
-                                     # in particular before systemd unit files (like assign_cloudinit_instanceid) are run
-                                     {'path': '/var/lib/cloud/seed/nocloud/user-data',
-                                      'permissions': '0644',
-                                      'content': ''
-                                      },
-                                     {'path': '/var/lib/cloud/seed/nocloud/meta-data',
-                                      'permissions': '0644',
-                                      'content': ''
-                                      },
                                      {'path': '/home_once.sh',
                                       'permissions': '0755',
                                       'content': home_once_script
