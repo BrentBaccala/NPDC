@@ -146,9 +146,6 @@ args = parser.parse_args()
 
 cloud_image = cloud_images[args.release]
 
-if args.gns3_appliance:
-    print("WARNING: --gns3-appliance currently has a serious problem.  See comments in script.")
-
 # Obtain the credentials needed to authenticate ourself to the GNS3 server
 
 config = configparser.ConfigParser()
