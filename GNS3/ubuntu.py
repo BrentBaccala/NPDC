@@ -406,18 +406,60 @@ cd /home/ubuntu
 su ubuntu -c /home_once.sh
 """
 
+# Still need to run 'systemctl enable assign_cloudinit_instanceid.service'
+
+systemd_service = f"""[Unit]
+Description=Assign system-uuid as cloud-init instance-id
+After=systemd-remount-fs.service
+Before=cloud-init-local.service
+
+[Install]
+WantedBy=multi-user.target
+
+[Service]
+Type=oneshot
+ExecStart=bash -c "echo instance-id: $(dmidecode -s system-uuid) > /var/lib/cloud/seed/nocloud/meta-data"
+ExecStart=bash -c "echo local-hostname: {args.name} >> /var/lib/cloud/seed/nocloud/meta-data"
+"""
+
 user_data = {'hostname': args.name,
-             # default is use a disk file as the dhcp-identifier, which causes all cloned
-             # images to use the same dhcp-identifier and get the same IP address,
-             # so configure the dhcp-identifier to be the instance's MAC address
-             'network': {'version': 2, 'ethernets': {'ens3': {'dhcp4': 'on', 'dhcp-identifier': 'mac'}}},
              # don't do package_upgrade, because it delays phone_home until it's done,
              # so I've put an 'apt upgrade' at the beginning of the opendesktop.sh script
              # 'package_upgrade': True,
              'ssh_authorized_keys': ssh_authorized_keys,
              'phone_home': {'url': notification_url},
              'write_files' : [],
+             'runcmd' : ['systemctl enable assign_cloudinit_instanceid.service']
 }
+
+if True:
+    user_data['users'] = [{'name': 'ubuntu',
+                           'plain_text_passwd': 'ubuntu',
+                           'ssh_authorized_keys': ssh_authorized_keys,
+                           'lock_passwd': False,
+                           'shell': '/bin/bash',
+                           'sudo': 'ALL=(ALL) NOPASSWD:ALL',
+    }]
+
+# default is use a disk file as the dhcp-identifier, which causes all cloned
+# images to use the same dhcp-identifier and get the same IP address,
+# so configure the dhcp-identifier to be the instance's MAC address
+#
+# Currently need NetworkManager to recognize ipv6-address-generation
+#
+# Use the instance's MAC address to identify itself to dhcp, not the
+# hostname, which will probably be 'ubuntu', and use RFC 7217 to
+# generate IPv6 addresses, because web browsers are starting to filter
+# out the older eui64 RFC 4291 addresses.
+#
+# Commented out ipv6-address-generation because it requires renderer: NetworkManager
+
+network_config = {'version': 2,
+                  'ethernets':
+                  {'ens4': {'dhcp4': 'on',
+                            'dhcp-identifier': 'mac',
+#                            'ipv6-address-generation': 'stable-privacy',
+                  }}}
 
 # Putting files in /home/ubuntu cause that directory's permissions to change to root.root,
 # probably because it's being created too early in the boot process.  Put files in / to avoid this.
@@ -427,6 +469,25 @@ if args.boot_script:
                                       'permissions': '0755',
                                       'content': once_script
                                      },
+                                     {'path': '/var/lib/cloud/seed/nocloud/network-config',
+                                      'permissions': '0644',
+                                      'content': yaml.dump(network_config)
+                                      },
+                                     {'path': '/lib/systemd/system/assign_cloudinit_instanceid.service',
+                                      'permissions': '0644',
+                                      'content': systemd_service
+                                      },
+                                     # user-data and meta-data have to be present for cloud-init to identify the
+                                     # NoCloud data source as present, and this check is made quite early during boot,
+                                     # in particular before systemd unit files (like assign_cloudinit_instanceid) are run
+                                     {'path': '/var/lib/cloud/seed/nocloud/user-data',
+                                      'permissions': '0644',
+                                      'content': ''
+                                      },
+                                     {'path': '/var/lib/cloud/seed/nocloud/meta-data',
+                                      'permissions': '0644',
+                                      'content': ''
+                                      },
                                      {'path': '/home_once.sh',
                                       'permissions': '0755',
                                       'content': home_once_script
@@ -460,10 +521,15 @@ user_data_file = tempfile.NamedTemporaryFile(delete = False)
 user_data_file.write(("#cloud-config\n" + yaml.dump(user_data)).encode('utf-8'))
 user_data_file.close()
 
+network_config_file = tempfile.NamedTemporaryFile(delete = False)
+network_config_file.write(yaml.dump(network_config).encode('utf-8'))
+network_config_file.close()
+
 genisoimage_command = ["genisoimage", "-input-charset", "utf-8", "-o", "-", "-l",
                        "-relaxed-filenames", "-V", "cidata", "-graft-points",
                        "meta-data={}".format(meta_data_file.name),
-                       "user-data={}".format(user_data_file.name)]
+                       "user-data={}".format(user_data_file.name),
+                       "network-config={}".format(network_config_file.name)]
 
 genisoimage_proc = subprocess.Popen(genisoimage_command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
 
@@ -476,6 +542,7 @@ if debug_isoimage:
 
 os.remove(meta_data_file.name)
 os.remove(user_data_file.name)
+os.remove(network_config_file.name)
 
 print("Uploading cloud-init configuration...")
 

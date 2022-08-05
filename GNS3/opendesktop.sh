@@ -49,30 +49,4 @@ sudo systemctl restart gdm3
 # remove the installation scripts (including this one)
 sudo rm /home_once.sh /screen.sh
 
-# Remove cloud-init
-#
-# It was fine to automate building the appliance, but what use is it now?
-
-sudo rm /etc/netplan/50-cloud-init.yaml
-sudo rm /etc/cloud/build.info
-sudo -E DEBIAN_FRONTEND=noninteractive apt -y purge cloud-init
-
-# Without cloud-init, we need a networking configuration.
-#
-# Use the instance's MAC address to identify itself to dhcp, not the
-# hostname, which will probably be 'ubuntu', and use RFC 7217 to
-# generate IPv6 addresses, because web browsers are starting to filter
-# out the older eui64 RFC 4291 addresses.
-
-sudo tee /etc/netplan/config.yaml <<EOF
-network:
-    renderer: NetworkManager
-    ethernets:
-        ens3:
-            dhcp4: true
-            dhcp-identifier: mac
-            ipv6-address-generation: stable-privacy
-    version: 2
-EOF
-
 uptime
