@@ -46,6 +46,8 @@ parser.add_argument('--configfile', type=str,
                     help='config file to use')
 parser.add_argument('--overwrite', action="store_true",
                     help='overwrite existing image')
+parser.add_argument('--delete', action="store_true",
+                    help='delete existing image')
 args = parser.parse_args()
 
 # Obtain the credentials needed to authenticate ourself to the GNS3 server
@@ -77,6 +79,16 @@ if args.ls:
     for image in images:
         print(image['filename'])
     exit(0)
+
+# Doesn't work because gns3 doesn't (yet) implement DELETE method for images
+if args.delete:
+    if args.filename in image_filenames:
+        url = "http://{}/v2/compute/qemu/images/{}".format(gns3_server, args.filename)
+        result = requests.delete(url, auth=auth)
+        result.raise_for_status()
+    else:
+        print("Image doesn't exist")
+        exit(1)
 
 if args.filename in image_filenames and not args.overwrite:
     print("Won't overwrite existing image")
