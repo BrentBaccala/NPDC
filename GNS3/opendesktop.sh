@@ -46,7 +46,7 @@ sudo apt -y remove update-manager gnome-initial-setup
 
 sudo systemctl restart gdm3
 
-# remove the installation scripts (including this one)
-sudo rm /home_once.sh /screen.sh
+# remove this installation script
+sudo rm /boot.sh
 
 uptime

@@ -385,11 +385,13 @@ for keyfilename in SSH_AUTHORIZED_KEYS_FILES:
                     ssh_authorized_keys.append(l)
 
 if args.boot_script:
-    screen_script = args.boot_script.read()
+    boot_script = args.boot_script.read()
     if args.gns3_appliance:
-        screen_script += "\nsudo shutdown -h now\n"
+        # If we're building an appliance, shutdown the system for cloning after the script is done
+        boot_script += "\nsudo shutdown -h now\n"
     else:
-        screen_script += "\nexec bash\n"
+        # If we're not building an appliance, exec bash to keep the 'screen' session running
+        boot_script += "\nexec bash\n"
 
 # use the host's apt proxy (if any) for the boot script
 if apt_proxy:
@@ -397,16 +399,7 @@ if apt_proxy:
 else:
     proxy_environment_setting = ''
 
-home_once_script = f"""#!/bin/bash
-{proxy_environment_setting} screen -dm bash -c /screen.sh
-"""
-
-once_script = f"""#!/bin/sh
-cd /home/ubuntu
-su ubuntu -c /home_once.sh
-"""
-
-# Still need to run 'systemctl enable assign_cloudinit_instanceid.service'
+# Still need to run 'systemctl enable assign_cloudinit_instanceid.service' in runcmd
 
 systemd_service = f"""[Unit]
 Description=Assign system-uuid as cloud-init instance-id
@@ -484,20 +477,14 @@ if args.debug:
 
 # Putting files in /home/ubuntu cause that directory's permissions to change to root.root,
 # probably because it's being created too early in the boot process.  Put files in / to avoid this.
+# I remove these files at the end of opendesktop.sh.
 
 if args.boot_script:
-    user_data['write_files'].extend([{'path': '/var/lib/cloud/scripts/per-once/once.sh',
-                                      'permissions': '0755',
-                                      'content': once_script
-                                     },
-                                     {'path': '/home_once.sh',
-                                      'permissions': '0755',
-                                      'content': home_once_script
-                                      },
-                                     {'path': '/screen.sh',
-                                      'permissions': '0755',
-                                      'content': screen_script
-                                      }])
+    user_data['write_files'].append({'path': '/boot.sh',
+                                     'permissions': '0755',
+                                     'content': boot_script
+    })
+    user_data['runcmd'].append(f'su ubuntu -c "{proxy_environment_setting} screen -dm bash -c /boot.sh"')
 
 # If the system we're running on is configured to use an apt proxy, use it for the GNS3 instance as well.
 #
