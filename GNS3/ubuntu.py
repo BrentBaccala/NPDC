@@ -191,7 +191,7 @@ for project in result.json():
         project_status = project['status']
 
 if not project_id:
-    print("Couldn't find project '{}'".format(args.project))
+    print("Couldn't find GNS3 project '{}'".format(args.project))
     exit(1)
 
 print("'{}' is {}".format(args.project, project_id))
@@ -278,6 +278,10 @@ if args.query:
 
 switches = [n['node_id'] for n in nodes if 'switch' in n['symbol']]
 switch_ports = [(p['adapter_number'], p['port_number']) for n in nodes if 'switch' in n['symbol'] for p in n['ports']]
+
+if len(switches) == 0:
+    print("No virtual switches configured; configure one and provide it with Internet access")
+    exit(1)
 
 adapters = [a for l in links for a in l['nodes']]
 occupied_ports = [(a['adapter_number'], a['port_number']) for a in adapters if a['node_id'] in switches]
@@ -673,7 +677,7 @@ if args.gns3_appliance:
     print("Copying and rebasing disk image...")
     disk_UUID_filename = os.path.join(GNS3_HOME, 'GNS3/projects/{}/project-files/qemu/{}/hda_disk.qcow2'.format(project_id, node_id))
     now = datetime.datetime.now()
-    appliance_image_filename = now.strftime('ubuntu-open-desktop-%d-%h-%H%M.qcow2')
+    appliance_image_filename = now.strftime('ubuntu-open-desktop-%Y-%h-%d-%H%M.qcow2')
     subprocess.run(['cp', disk_UUID_filename, appliance_image_filename]).check_returncode()
     # 6a. get a copy of the backing image and rebase it
     #     from https://stackoverflow.com/a/39217788/1493790
