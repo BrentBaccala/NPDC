@@ -305,6 +305,7 @@ def get_ip():
     return IP
 
 script_ip = get_ip()
+print("Script IP", script_ip)
 
 # Start an HTTP server running that will receive notifications from
 # the instance after its completes its boot.
@@ -340,7 +341,10 @@ class RequestHandler(BaseHTTPRequestHandler):
 server_address = ('', 0)
 httpd = HTTPServer(server_address, RequestHandler)
 
-notification_url = "http://{}:{}/".format(script_ip, httpd.server_port)
+if script_ip != '127.0.0.1':
+    notification_url = "http://{}:{}/".format(script_ip, httpd.server_port)
+else:
+    notification_url = None
 
 # Catch uncaught exceptions and shutdown the httpd server that we're
 # about to start.
@@ -445,7 +449,6 @@ user_data = {'hostname': args.name,
              # so I've put an 'apt upgrade' at the beginning of the opendesktop.sh script
              # 'package_upgrade': True,
              'ssh_authorized_keys': ssh_authorized_keys,
-             'phone_home': {'url': notification_url},
              'write_files' : [
                  {'path': '/lib/systemd/system/assign_cloudinit_instanceid.service',
                   'permissions': '0644',
@@ -469,6 +472,9 @@ user_data = {'hostname': args.name,
              ],
              'runcmd' : ['systemctl enable assign_cloudinit_instanceid.service']
 }
+
+if notification_url:
+    user_data['phone_home'] = {'url': notification_url, 'tries' : 1}
 
 if args.debug:
     user_data['users'] = [{'name': 'ubuntu',
@@ -635,11 +641,13 @@ while result.json()['status'] != 'started':
     result = requests.get(node_url, auth=auth)
     result.raise_for_status()
 
-print("Waiting for node to finish booting...")
+if script_ip != '127.0.0.1':
 
-with instance_report_cv:
-    while len(instances_reported) == 0:
-        instance_report_cv.wait()
+    print("Waiting for node to finish booting...")
+
+    with instance_report_cv:
+        while len(instances_reported) == 0:
+            instance_report_cv.wait()
 
 # print(instances_reported)
 # print(instance_content)
@@ -648,8 +656,9 @@ httpd.shutdown()
 
 # If you want to now auto-connect to the instance and watch its screen.sh script running
 
-ipaddr=list(instances_reported)[0]
-print(f'a cut-and-paste suggestion:   ssh -t ubuntu@{ipaddr} screen -rd')
+if len(instances_reported) > 0:
+    ipaddr=list(instances_reported)[0]
+    print(f'a cut-and-paste suggestion:   ssh -t ubuntu@{ipaddr} screen -rd')
 
 # You'll still need to ssh in with '-X', not to a screen session, to run Puppeteer tests
 
