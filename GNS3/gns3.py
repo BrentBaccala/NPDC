@@ -103,7 +103,11 @@ class Server:
             if project['name'] == project_name:
                 return Project(self, project['project_id'])
         if create:
-            raise NotImplementedError("GNS3 project creation not implemented")
+            new_project = {'name': project_name, 'auto_close' : False}
+            url = "{}/projects".format(self.url)
+            result = requests.post(url, auth=self.auth, data=json.dumps(new_project))
+            result.raise_for_status()
+            return Project(self, result.json()['project_id'])
         else:
             raise Exception("GNS3 project does not exist")
 
@@ -190,6 +194,10 @@ class Project:
         if self.verbose: print("Closing project", self.project_id)
         url = "{}/close".format(self.url)
         result = requests.post(url, auth=self.auth, data=json.dumps({}))
+        result.raise_for_status()
+
+    def remove(self):
+        result = requests.delete(self.url)
         result.raise_for_status()
 
     def nodes(self):
@@ -321,6 +329,106 @@ class Project:
         self.httpd.shutdown()
 
     ### FUNCTIONS TO CREATE VARIOUS KINDS OF GNS3 OBJECTS
+
+    def create_qemu_node(self, name, image, images=[], properties={}, config={}, disk=None):
+        r"""create_qemu_node(name, image, images, properties, config, disk)
+        images are files to place in the ISO image (a dictionary mapping file names to data)
+        properties are additional items to add to the properties structure
+        config are additional items to add to the qemnu node structure
+        disk is a disk size is MB (default is to not resize the default image)
+        """
+        # Create an ISO image containing the boot configuration and upload it
+        # to the GNS3 project.  We write the config to a temporary file,
+        # convert it to ISO image, then post the ISO image to GNS3.
+
+        assert image
+
+        print(f"Building ISO configuration for {name}...")
+
+        # Generate the ISO image that will be used as a virtual CD-ROM to pass all this initialization data to cloud-init.
+
+        genisoimage_command = ["genisoimage", "-input-charset", "utf-8", "-o", "-", "-l",
+                               "-relaxed-filenames", "-V", "cidata", "-graft-points"]
+
+        temporary_files = []
+
+        for fn,data in images.items():
+
+            data_file = tempfile.NamedTemporaryFile(delete = False)
+            data_file.write(data)
+            data_file.close()
+            genisoimage_command.append(f"{fn}={data_file.name}")
+            temporary_files.append(data_file)
+
+        genisoimage_proc = subprocess.Popen(genisoimage_command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+
+        isoimage = genisoimage_proc.stdout.read()
+
+        debug_isoimage = False
+        if debug_isoimage:
+            with open('isoimage-debug.iso', 'wb') as f:
+                f.write(isoimage)
+
+        for tmpfile in temporary_files:
+            os.remove(tmpfile.name)
+
+        print(f"Uploading ISO configuration for {name}...")
+
+        # files in the GNS3 directory take precedence over these project files,
+        # so we need to make these file names unique
+        cdrom_image = self.project_id + '_' + name + '.iso'
+        file_url = "{}/files/{}".format(self.url, cdrom_image)
+        result = requests.post(file_url, auth=self.auth, data=isoimage)
+        result.raise_for_status()
+
+        # Configure a QEMU cloud node
+
+        print(f"Configuring {name} node...")
+
+        url = "{}/nodes".format(self.url)
+
+        # It's important to use the scsi disk interface, because the IDE interface in qemu
+        # has some kind of bug, probably in its handling of DISCARD operations, that
+        # causes a thin provisioned disk to balloon up with garbage.
+        #
+        # See https://unix.stackexchange.com/questions/700050
+        # and https://bugs.launchpad.net/ubuntu/+source/qemu/+bug/1974100
+
+        qemu_node = {
+            "compute_id": "local",
+            "name": name,
+            "node_type": "qemu",
+            "properties": {
+                "adapter_type" : "virtio-net-pci",
+                "hda_disk_image": image,
+                "hda_disk_interface": "scsi",
+                "cdrom_image" : cdrom_image,
+                "qemu_path": "/usr/bin/qemu-system-x86_64",
+#                "process_priority": "very high",
+            },
+
+            # ens4, ens5, ens6 seems to be the numbering scheme on Ubuntu 20,
+            # but we can't replicate that with a Python format string
+            "port_name_format": "eth{}",
+
+            "symbol": ":/symbols/qemu_guest.svg",
+        }
+
+        qemu_node['properties'].update(properties)
+        qemu_node.update(config)
+
+        result = requests.post(url, auth=self.auth, data=json.dumps(qemu_node))
+        result.raise_for_status()
+        qemu = result.json()
+
+        if disk and disk > 2048:
+            url = "{}/compute/projects/{}/qemu/nodes/{}/resize_disk".format(self.url, qemu['node_id'])
+            resize_obj = {'drive_name' : 'hda', 'extend' : disk - 2048}
+            result = requests.post(url, auth=self.auth, data=json.dumps(resize_obj))
+            result.raise_for_status()
+
+        self.nodes()  # update self.cached_nodes
+        return qemu
 
     def create_ubuntu_node(self, user_data, network_config=None, x=0, y=0, image=None, cpus=None, ram=None, disk=None, ethernets=None, vnc=None):
         r"""create_ubuntu_node(user_data, x=0, y=0, cpus=None, ram=None, disk=None)
