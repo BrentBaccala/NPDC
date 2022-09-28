@@ -26,155 +26,80 @@
 # host (br0) that should have IP connectivity and a DHCP server
 # running on it.
 
-import requests
-import json
-import re
-
+import gns3
 import math
-
-import subprocess
-
-import threading
-from http.server import BaseHTTPRequestHandler,HTTPServer
-
+import json
 import napalm
+import argparse
 
-# Don't use localhost for gns3_server, even if the server is running
-# on the same host as the script, since we use gns3_server in the next
-# section of code to determine which of our IP addresses we should
-# pass to the router, and we surely don't want 127.0.0.1.
+# Which interface on the bare metal system is used to access the Internet from GNS3?
+#
+# It should be either a routed virtual link to the bare metal system, or
+# a bridged interface to a physical network device.
 
-gns3_server = "blade7:3080"
-host_interface = "br0"
+INTERNET_INTERFACE = 'veth'
+
+# Parse the command line options
+
+parser = argparse.ArgumentParser(description='Start an Cisco test network in GNS3')
+parser.add_argument('-H', '--host',
+                    help='name of the GNS3 host')
+parser.add_argument('-p', '--project', default='triangle-pods',
+                    help='name of the GNS3 project (default "triangle-pods")')
+parser.add_argument('-n', '--npods', type=int, default=5,
+                    help='number of pods to create (default 5)')
+parser.add_argument('--nswitches', type=int, default=4,
+                    help='number of switches to create (default 4)')
+parser.add_argument('-I', '--interface', default=INTERNET_INTERFACE,
+                    help=f'network interface for Internet access (default "{INTERNET_INTERFACE}")')
+group = parser.add_mutually_exclusive_group()
+group.add_argument('--delete-everything', action="store_true",
+                    help='delete everything in the project instead of creating it')
+group.add_argument('cisco_image', metavar='FILENAME', nargs='?',
+                    help='client image to test')
+args = parser.parse_args()
+
+# Open GNS3 server
+
+gns3_server = gns3.Server(host=args.host)
+
+# If the user didn't specify a cloud image, use the first 'csr1000v' image on the server.
+# If the user did specify an image, check to make sure it exists.
+
+if args.cisco_image:
+    assert args.cisco_image in gns3_server.images()
+else:
+    args.cisco_image = next(image for image in gns3_server.images() if image.startswith('csr1000v'))
+
+# Open or create a GNS3 project
+
+gns3_project = gns3_server.project(args.project, create=True)
+
+gns3_project.open()
+
+if args.delete_everything:
+    gns3_project.delete_everything()
+    exit(0)
 
 # The CSRv's
-
-npods = 5
 
 def mkhostname(pod, router):
     return "{}{}".format(pod, router)
 
-hostnames = [mkhostname(pod, router) for pod in range(1,npods+1) for router in ["a", "b", "c"]]
+hostnames = [mkhostname(pod, router) for pod in range(1,args.npods+1) for router in ["a", "b", "c"]]
 
 hostname_x = {}
 hostname_y = {}
 
-for pod in range(1,npods+1):
+for pod in range(1,args.npods+1):
     for router in ["a", "b", "c"]:
-        hostname_x[mkhostname(pod, router)] = -int(300 * math.cos(pod * 2*math.pi / (npods+1)))
-        hostname_y[mkhostname(pod, router)] = int(300 * math.sin(pod * 2*math.pi / (npods+1)))
+        hostname_x[mkhostname(pod, router)] = -int(300 * math.cos(pod * 2*math.pi / (args.npods+1)))
+        hostname_y[mkhostname(pod, router)] = int(300 * math.sin(pod * 2*math.pi / (args.npods+1)))
 
-# This will return the local IP address that the script uses to
-# connect to the GNS3 server.  We need this to tell the Cisco CSRv
-# how to connect back to the script, and if we've got multiple
-# interfaces, multiple DNS names, and multiple IP addresses, it's a
-# bit unclear which one to use.
-#
-# from https://stackoverflow.com/a/28950776/1493790
+print("Building CSRv configuration...")
 
-import socket
-
-def get_ip():
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    # doesn't even have to be reachable
-    s.connect((gns3_server.split(':')[0], 1))
-    IP = s.getsockname()[0]
-    s.close()
-    return IP
-
-script_ip = get_ip()
-
-# Start an HTTP server running that will receive notifications from
-# the Cisco CSRv's after they complete their boot.
-#
-# This assumes that the virtual topology will have connectivity with
-# the host running this script.
-#
-# We keep a set of which routers have reported in, and a condition
-# variable is used to signal our main thread when they report.
-
-routers_reported = set()
-router_report_cv = threading.Condition()
-
-running_config = {}
-
-class RequestHandler(BaseHTTPRequestHandler):
-    def do_PUT(self):
-        length = self.headers['Content-Length']
-        self.send_response_only(100)
-        self.end_headers()
-
-        content = self.rfile.read(int(length))
-        # print(content.decode('utf-8'))
-
-        with router_report_cv:
-            if not self.client_address[0] in routers_reported:
-                running_config[self.client_address[0]] = content.decode('utf-8')
-                routers_reported.add(self.client_address[0])
-                router_report_cv.notify()
-
-        self.send_response(200)
-        self.end_headers()
-
-server_address = ('', 0)
-httpd = HTTPServer(server_address, RequestHandler)
-
-notification_url = "http://{}:{}/".format(script_ip, httpd.server_port)
-
-# Catch uncaught exceptions and shutdown the httpd server that we're
-# about to start.
-#
-# from https://stackoverflow.com/a/6598286/1493790
-
-import sys
-import pdb
-
-def my_except_hook(exctype, value, traceback):
-    httpd.shutdown()
-    pdb.set_trace()
-    sys.__excepthook__(exctype, value, traceback)
-sys.excepthook = my_except_hook
-
-threading.Thread(target=httpd.serve_forever).start()
-
-# Create a new GNS3 project called 'ping-test'
-#
-# The only required field for a new GNS3 project is 'name'
-#
-# This will error out with a 409 Conflict if 'ping-test' already exists
-
-url = "http://{}/v2/projects".format(gns3_server)
-
-result = requests.get(url)
-result.raise_for_status()
-projects = result.json()
-
-for project in projects:
-    if project['name'] == 'triangle-pods':
-        print("Deleting old project {}...".format(project['project_id']))
-        url2 = "http://{}/v2/projects/{}".format(gns3_server, project['project_id'])
-        result = requests.delete(url2)
-        result.raise_for_status()
-
-print("Creating project...")
-
-new_project = {'name': 'triangle-pods', 'auto_close' : False}
-
-url = "http://{}/v2/projects".format(gns3_server)
-
-result = requests.post(url, data=json.dumps(new_project))
-result.raise_for_status()
-
-my_project = result.json()
-
-# Create an ISO image containing the boot configuration and upload it
-# to the GNS3 project.  We write the config to a temporary file,
-# convert it to ISO image, then post the ISO image to GNS3.
-
-print("Building CSRv configurations...")
-
-def CSRv_config(hostname):
-    return """
+def CSRv_config(hostname, notification_url):
+    return f"""
 int gig 1
   ip addr dhcp
   no shut
@@ -185,11 +110,9 @@ line vty 0 4
 
 username cisco priv 15 password cisco
 
-ip route 0.0.0.0 0.0.0.0 http
-
 ! A hostname is required for ssh to work
 
-hostname {0}
+hostname {hostname}
 
 ! This lets the "copy run URL" notification command work
 
@@ -223,207 +146,63 @@ event manager applet send_notification authorization bypass
  action 20 cli command "config t"
  action 30 cli command "no event manager applet send_notification"
  action 40 wait 5
- action 50 cli command "crypto key generate rsa modulus 2048"
+ action 50 cli command "crypto key generate rsa modulus 1024"
  action 60 cli command "end"
- action 70 cli command "copy run {1}"
+ action 70 cli command "copy run {notification_url}"
 
 end
-""".format(hostname, notification_url)
-
-import os
-import tempfile
-
-for hostname in hostnames:
-
-    config_file = tempfile.NamedTemporaryFile(delete = False)
-
-    config_file.write(CSRv_config(hostname).encode('utf-8'))
-    config_file.close()
-
-    import subprocess
-
-    genisoimage_command = ["genisoimage", "-input-charset", "utf-8", "-o", "-", "-l",
-                           "-graft-points", "iosxe_config.txt={}".format(config_file.name)]
-
-    genisoimage_proc = subprocess.Popen(genisoimage_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-
-    isoimage = genisoimage_proc.stdout.read()
-
-    os.remove(config_file.name)
-
-    # print("Uploading CSRv configuration...")
-
-    file_url = "http://{}/v2/projects/{}/files/config-{}.iso".format(gns3_server, my_project['project_id'], hostname)
-    result = requests.post(file_url, data=isoimage)
-    result.raise_for_status()
-
-# Configure a cloud node, a switch node, and the CSRv's with three interfaces each
+"""
 
 print("Configuring nodes...")
 
-url = "http://{}/v2/projects/{}/nodes".format(gns3_server, my_project['project_id'])
+switches = []
 
-cloud_node = {
-        "compute_id": "local",
-        "name": "Cloud",
-        "node_type": "cloud",
-
-        "symbol": ":/symbols/cloud.svg",
-        "x" : -300,
-        "y" : 0,
-    }
-
-cloud_result = requests.post(url, data=json.dumps(cloud_node))
-cloud_result.raise_for_status()
-cloud = cloud_result.json()
-
-def switch_node(n):
-    return {
-        "compute_id": "local",
-        "name": "Switch{}".format(n),
-        "node_type": "ethernet_switch",
-
-        "symbol": ":/symbols/ethernet_switch.svg",
-        "x" : 0,
-        "y" : 0,
-        "console_type" : "telnet",
-    }
-
-switch = []
-switches = 4
-
-for n in range(0,switches):
-    switch_result = requests.post(url, data=json.dumps(switch_node(n)))
-    switch_result.raise_for_status()
-    switch.append(switch_result.json())
-
-def CSRv_node(hostname):
-    return {
-        "compute_id": "local",
-        "name": hostname,
-        "node_type": "qemu",
-        "properties": {
-            "adapters": 3,
-            "adapter_type" : "virtio-net-pci",
-            "hda_disk_image": "csr1000v-universalk9.16.07.01-serial.qcow2",
-            "cdrom_image" : "config-{}.iso".format(hostname),
-            "qemu_path": "/usr/bin/qemu-system-x86_64",
-            "ram": 3072
-        },
-
-        "symbol": ":/symbols/router.svg",
-        "x" : hostname_x[hostname],
-        "y" : hostname_y[hostname]
-    }
+for n in range(0,args.nswitches):
+    switches.append(gns3_project.switch(f'InternetSwitch{n}', x=0, y=0))
 
 CSRv = {}
 
 for hostname in hostnames:
-    result = requests.post(url, data=json.dumps(CSRv_node(hostname)))
-    result.raise_for_status()
-    CSRv[hostname] = result.json()
+    images = {'iosxe_config.txt': CSRv_config(hostname, gns3_project.notification_url + hostname).encode()}
+    config = {"symbol": ":/symbols/router.svg", "x" : hostname_x[hostname], "y" : hostname_y[hostname]}
+    # Cisco CSR1000v can't seem to handle the scsi interface gns3.py uses as its default
+    properties = {"ram": 4*1024, "hda_disk_interface": 'ide', 'adapters': 3}
 
-# LINKS
+    CSRv[hostname] = gns3_project.create_qemu_node(hostname, args.cisco_image, images=images, config=config, properties=properties)
 
-print("Configuring links...")
-
-url = "http://{}/v2/projects/{}/links".format(gns3_server, my_project['project_id'])
-
-# find host_interface ('br0') port in cloud object
-
-br0 = [port for port in cloud['ports'] if port['short_name'] == host_interface][0]
+cloud = gns3_project.cloud('Internet', args.interface, x=-200, y=200)
 
 # Link the cloud to switch 0
 
-link_obj = {'nodes' : [{'adapter_number' : br0['adapter_number'],
-                        'port_number' : br0['port_number'],
-                        'node_id' : cloud['node_id']},
-                       {'adapter_number' : 0,
-                        'port_number' : 0,
-                        'node_id' : switch[0]['node_id']}]}
-
-result = requests.post(url, data=json.dumps(link_obj))
-result.raise_for_status()
+gns3_project.link(cloud, 0, switches[0])
 
 # Link switches 1-n to switch 0
 
-for n in range(1,switches):
-    link_obj = {'nodes' : [{'adapter_number' : 0,
-                            'port_number' : n,
-                            'node_id' : switch[0]['node_id']},
-                           {'adapter_number' : 0,
-                            'port_number' : 0,
-                            'node_id' : switch[n]['node_id']}]}
-
-    result = requests.post(url, data=json.dumps(link_obj))
-    result.raise_for_status()
+for n in range(1,args.nswitches):
+    gns3_project.link(switches[n], 0, switches[0])
 
 # Link the first interface of each CSRv to a switch
 
-for hostname in hostnames:
-
-    n = hostnames.index(hostname)
+for n, hostname in enumerate(hostnames):
     switchnum = int(n / 6) + 1
-    portnum = n % 6 + 1
-    link_obj = {'nodes' : [{'adapter_number' : 0,
-                            'port_number' : 0,
-                            'node_id' : CSRv[hostname]['node_id']},
-                           {'adapter_number' : 0,
-                            'port_number' : portnum,
-                            'node_id' : switch[switchnum]['node_id']}]}
-
-    result = requests.post(url, data=json.dumps(link_obj))
-    result.raise_for_status()
+    gns3_project.link(CSRv[hostname], 0, switches[switchnum])
 
 # Link the second and third interfaces of each CSRv pair together
 
-for pod in range(1, npods+1):
+for pod in range(1, args.npods+1):
     for (i,j) in [('a', 'b'), ('b', 'c'), ('c', 'a')]:
         router1 = mkhostname(pod, i)
         router2 = mkhostname(pod, j)
-
-        link_obj = {'nodes' : [{'adapter_number' : 1,
-                                'port_number' : 0,
-                                'node_id' : CSRv[router1]['node_id']},
-                               {'adapter_number' : 2,
-                                'port_number' : 0,
-                                'node_id' : CSRv[router2]['node_id']}]}
-
-        result = requests.post(url, data=json.dumps(link_obj))
-        result.raise_for_status()
-
+        gns3_project.link(CSRv[router1], 1, CSRv[router2], 2)
 
 # START THE NODES
 
 print("Starting nodes...")
 
-project_start_url = "http://{}/v2/projects/{}/nodes/start".format(gns3_server, my_project['project_id'])
-result = requests.post(project_start_url)
-result.raise_for_status()
+#gns3_project.start_all_nodes()
+gns3_project.start_nodes(*CSRv)
 
-# WAIT FOR NODES TO BOOT
-#
-# One way to do this if is the DHCP servers supports notifications of
-# new clients.
-#
-# The ISC Kea server probably can do that, in a somewhat roundabout
-# way.  It can use MySQL as a backend, and you can set a MySQL trigger
-# for when a new lease appears in the database.  You probably need to
-# add an extension to MySQL to let it run shell scripts, which run as
-# the MySQL database user, so the script could do something like
-# delete the entire database.  Or configure an extension to run the
-# scripts as 'nobody'.  Another possibility is to enhance Kea so that
-# it directly supports notifications.
-#
-# Instead, I use the EEM applet on the router to send the notification.
-# This has the advantage of ensuring that the router has generated an
-# RSA key and can receive SSH connections.
-
-print("Waiting for nodes to boot...")
-
-with router_report_cv:
-    while len(routers_reported) < 3*npods:
-        router_report_cv.wait()
+#exit(0)
 
 # TOPOLOGY UP AND RUNNING
 
@@ -431,23 +210,12 @@ print("Running ping tests...")
 
 dev = napalm.get_network_driver('ios')
 
-for ipaddr in routers_reported:
-    device = dev(hostname=ipaddr, username='cisco', password='cisco')
+for hostname,addr in gns3_project.httpd.instances_reported.items():
+    device = dev(hostname=addr, username='cisco', password='cisco')
     device.open()
-    print(json.dumps(device.ping(script_ip), indent=4))
-
-hostname_to_ipaddr = {}
-
-for ipaddr in routers_reported:
-    hostname = re.findall('^hostname (.*)', running_config[ipaddr], re.MULTILINE)[0]
-    hostname_to_ipaddr[hostname] = ipaddr
+    print(json.dumps(device.ping(gns3_project.local_ip), indent=4))
 
 for hostname in hostnames:
     #print(hostname, hostname_to_ipaddr[hostname])
-    print("{:16} IN A {}".format(hostname, hostname_to_ipaddr[hostname]))
+    print("{:16} IN A {}".format(hostname, gns3_project.httpd.instances_reported[hostname]))
 
-# Shutdown the http server thread and exit
-
-print("Exiting...")
-
-httpd.shutdown()

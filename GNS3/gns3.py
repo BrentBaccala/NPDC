@@ -269,6 +269,11 @@ class Project:
     ### for things like package installs and upgrades, so we need to make sure the gateways come up first
     ### before we try to boot nodes deeper in the topology.
 
+    def start_all_nodes(self):
+        project_start_url = "{}/nodes/start".format(self.url)
+        result = requests.post(project_start_url, auth=self.auth)
+        result.raise_for_status()
+
     def start_nodeid(self, nodeid):
         existing_nodes = self.nodes()
         names_by_node_id = {node['node_id']:node['name'] for node in existing_nodes}
