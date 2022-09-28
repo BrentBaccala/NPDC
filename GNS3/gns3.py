@@ -19,13 +19,8 @@ from requests.auth import HTTPBasicAuth
 import json
 import yaml
 import os
-import time
-import shutil
 import tempfile
-import pprint
 import urllib.parse
-import datetime
-import hashlib
 import ipaddress
 
 import socket
@@ -63,6 +58,9 @@ class Server:
         self.verbose = verbose
 
         # Obtain the credentials needed to authenticate ourself to the GNS3 server
+        #
+        # Look through the credential files for the first Server entry that matches
+        # 'host' and 'port', or just the first entry if those two are None.
 
         for propfilename in GNS3_CREDENTIAL_FILES:
             propfilename = os.path.expanduser(propfilename)
@@ -109,6 +107,55 @@ class Server:
         else:
             raise Exception("GNS3 project does not exist")
 
+    # This will return the local IP address that the script uses to
+    # connect to the GNS3 server.  We need this to tell the instance
+    # how to connect back to the script, and if we've got multiple
+    # interfaces, multiple DNS names, and multiple IP addresses, it's a
+    # bit unclear which one to use.
+    #
+    # from https://stackoverflow.com/a/28950776/1493790
+
+    def get_local_ip(self):
+        "Return the local IP address used to connect to the server"
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        # The address doesn't even have to be reachable, since a UDP connect
+        # doesn't send any packets.
+        s.connect((urllib.parse.urlparse(self.url).hostname, 1))
+        IP = s.getsockname()[0]
+        s.close()
+        return IP
+
+# RequestHandler for an HTTP server running that will receive
+# notifications from the instances after they complete cloud-init.
+#
+# This assumes that the virtual topology will have connectivity with
+# the host running this script (this is what the -I interface is for).
+#
+# We keep a set of which instances have reported in, and a condition
+# variable is used to signal our main thread when they report.
+# These are extra instance variables on the server object:
+#     self.server.instances_reported
+#     self.server.instance_report_cv
+
+class RequestHandler(BaseHTTPRequestHandler):
+    def do_POST(self):
+        length = self.headers['Content-Length']
+        self.send_response_only(100)
+        self.end_headers()
+
+        content = urllib.parse.parse_qs(self.rfile.read(int(length)))
+        hostname = content[b'hostname'][0]
+        print(hostname.decode(), 'running')
+
+        with self.server.instance_report_cv:
+            if not hostname in self.server.instances_reported:
+                self.server.instances_reported.add(hostname)
+                self.server.instance_content[hostname] = content
+                self.server.instance_report_cv.notify()
+
+        self.send_response(200)
+        self.end_headers()
+
 class Project:
 
     def __init__(self, server, project_id):
@@ -118,6 +165,20 @@ class Project:
         self.auth = server.auth
         self.verbose = server.verbose
         self.cached_nodes = None
+
+        script_ip = server.get_local_ip()
+
+        if script_ip != '127.0.0.1':
+            server_address = ('', 0)
+            self.httpd = HTTPServer(server_address, RequestHandler)
+            self.httpd.instances_reported = set()
+            self.httpd.instance_content = {}
+            self.httpd.instance_report_cv = threading.Condition()
+            self.notification_url = "http://{}:{}/".format(script_ip, self.httpd.server_port)
+        else:
+            # No point in trying notification callbacks to localhost; it won't work
+            self.httpd = None
+            self.notification_url = None
 
     def open(self):
         if self.verbose: print("Opening project", self.project_id)
@@ -165,62 +226,6 @@ class Project:
                 result = requests.delete(node_url, auth=self.auth)
                 result.raise_for_status()
 
-    # This will return the local IP address that the script uses to
-    # connect to the GNS3 server.  We need this to tell the instance
-    # how to connect back to the script, and if we've got multiple
-    # interfaces, multiple DNS names, and multiple IP addresses, it's a
-    # bit unclear which one to use.
-    #
-    # from https://stackoverflow.com/a/28950776/1493790
-
-    def get_ip(self):
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        # doesn't even have to be reachable
-        s.connect((gns3_server.split(':')[0], 1))
-        IP = s.getsockname()[0]
-        s.close()
-        return IP
-
-    # Start an HTTP server running that will receive notifications from
-    # the instance after its completes its boot.
-    #
-    # This assumes that the virtual topology will have connectivity with
-    # the host running this script.
-    #
-    # We keep a set of which instances have reported in, and a condition
-    # variable is used to signal our main thread when they report.
-
-    instances_reported = set()
-    instance_content = {}
-    instance_report_cv = threading.Condition()
-
-    class RequestHandler(BaseHTTPRequestHandler):
-        def do_POST(self):
-            length = self.headers['Content-Length']
-            self.send_response_only(100)
-            self.end_headers()
-
-            content = urllib.parse.parse_qs(self.rfile.read(int(length)))
-            hostname = content[b'hostname'][0]
-            print(hostname.decode(), 'running')
-
-            with instance_report_cv:
-                if not hostname in instances_reported:
-                    instances_reported.add(hostname)
-                    instance_content[hostname] = content
-                    instance_report_cv.notify()
-
-            self.send_response(200)
-            self.end_headers()
-
-    def start_listening_for_notifications(self):
-        global httpd, notification_url
-        script_ip = self.get_ip()
-        server_address = ('', 0)
-        httpd = HTTPServer(server_address, RequestHandler)
-        threading.Thread(target=httpd.serve_forever).start()
-        return "{}:{}/".format(script_ip, httpd.server_port)
-
     ### TRACK WHICH OBJECTS DEPEND ON WHICH OTHERS FOR START ORDER
 
     # a map from nodeID to a list of node dictionaries
@@ -228,7 +233,7 @@ class Project:
 
     def depends_on(self, node1, node2):
         print('depending', node1['name'], 'on', node2['name'])
-        node_dependencies[node1['node_id']] = (node2,)
+        self.node_dependencies[node1['node_id']] = (node2,)
 
     ### Start nodes running
     ###
@@ -236,63 +241,84 @@ class Project:
     ### for things like package installs and upgrades, so we need to make sure the gateways come up first
     ### before we try to boot nodes deeper in the topology.
 
-    def start_nodes_running(self, node_names_to_start):
+    def start_nodeid(self, nodeid):
+        existing_nodes = self.nodes()
+        names_by_node_id = {node['node_id']:node['name'] for node in existing_nodes}
+        print(f"Starting {names_by_node_id[nodeid]}...")
 
-        names_by_node_id = {v['node_id']:k for k,v in existing_nodes.items()}
+        project_start_url = "{}/nodes/{}/start".format(self.url, nodeid)
+        result = requests.post(project_start_url, auth=self.auth)
+        result.raise_for_status()
 
-        def start_nodeid(nodeid):
-            print(f"Starting {names_by_node_id[nodeid]}...")
+    def start_node(self, node):
+        self.start_nodeid(node['node_id'])
 
-            project_start_url = "{}/nodes/{}/start".format(self.url, nodeid)
-            result = requests.post(project_start_url, auth=self.auth)
-            result.raise_for_status()
+    def start_nodes(self, *node_list):
+
+        # node_list can be either names or node dictionaries
+        node_names_to_start = [node['name'] if type(node) == dict else node for node in node_list]
+
+        threading.Thread(target=self.httpd.serve_forever).start()
+
+        existing_nodes = self.nodes()
+
+        names_by_node_id = {node['node_id']:node['name'] for node in existing_nodes}
+        node_ids_by_name = {node['name']:node['node_id'] for node in existing_nodes}
 
         all_dependent_nodes = set()
-        for value in node_dependencies.values():
+        for value in self.node_dependencies.values():
             for node in value:
                 all_dependent_nodes.update((node['node_id'], ))
 
         # We assume that if GNS3 reported the node as 'started', that it's ready for service.
         # This isn't entirely valid, as it might still be booting, but it's OK for now (I hope).
 
-        running_nodeids = set(node['node_id'] for node in nodes if node['status'] == 'started')
+        running_nodeids = set(node['node_id'] for node in existing_nodes if node['status'] == 'started')
 
         waiting_for_nodeids_to_start = set()
 
         for node_name in node_names_to_start:
-            node_id = existing_nodes[node_name]['node_id']
-            dependencies = node_dependencies.get(node_id, [])
+            node_id = node_ids_by_name[node_name]
+            dependencies = self.node_dependencies.get(node_id, [])
+            # we'll need to start all nodes dependent on the nodes to start
             for v in dependencies:
                 if v['name'] not in node_names_to_start:
                     node_names_to_start.append(v['name'])
+            # if the node isn't running but all of its dependencies are, start it
             if node_id not in running_nodeids and node_id not in waiting_for_nodeids_to_start:
                 if running_nodeids.issuperset([v['node_id'] for v in dependencies]):
-                    start_nodeid(node_id)
+                    self.start_nodeid(node_id)
                     waiting_for_nodeids_to_start.add(node_id)
 
-        with instance_report_cv:
+        with self.httpd.instance_report_cv:
+            # maybe this should be just "while waiting_for_nodeids_to_start:"
+            # the way it's done now, we only keep waiting until all dependent nodes have started
+            # so, for example, if a server depends on a gateway, we wait for the gateway
+            #    to boot, then start the server, but return without waiting for the server
+            #    to finish booting
+            while waiting_for_nodeids_to_start:
+            #while waiting_for_nodeids_to_start.intersection(all_dependent_nodes):
 
-            while waiting_for_nodeids_to_start.intersection(all_dependent_nodes):
+                #print('Waiting for', [names_by_node_id[nodeid] for nodeid in waiting_for_nodeids_to_start.intersection(all_dependent_nodes)])
+                print('Waiting for', [names_by_node_id[nodeid] for nodeid in waiting_for_nodeids_to_start])
+                self.httpd.instance_report_cv.wait()
 
-                print('Waiting for', [names_by_node_id[nodeid] for nodeid in waiting_for_nodeids_to_start.intersection(all_dependent_nodes)])
-                instance_report_cv.wait()
-
-                running_nodeids.update(existing_nodes[inst.decode()]['node_id'] for inst in instances_reported)
+                running_nodeids.update(node_ids_by_name[inst.decode()] for inst in self.httpd.instances_reported)
 
                 waiting_for_nodeids_to_start.difference_update(running_nodeids)
 
                 candidate_nodes = set()
 
-                for key, value in node_dependencies.items():
+                for key, value in self.node_dependencies.items():
                     if key not in waiting_for_nodeids_to_start and key not in running_nodeids:
                         if running_nodeids.issuperset([v['node_id'] for v in value]):
                             candidate_nodes.add(key)
 
                 for start_node in candidate_nodes:
-                    start_nodeid(start_node)
+                    self.start_nodeid(start_node)
                     waiting_for_nodeids_to_start.add(start_node)
 
-        httpd.shutdown()
+        self.httpd.shutdown()
 
     ### FUNCTIONS TO CREATE VARIOUS KINDS OF GNS3 OBJECTS
 
@@ -544,14 +570,3 @@ class Project:
                link['nodes'][0]['node_id'] == node2['node_id']:
                 return
         self.create_link(node1, port1, node2, port2)
-
-    # CREATE NEW VIRTUAL NETWORK
-
-    # notification_url = start_listening_for_notifications()
-
-    # If the system we're running on is configured to use an apt proxy, use it for the NAT instance as well.
-    #
-    # This will break things if the instance can't reach the proxy.
-
-    if apt_proxy:
-        user_data['apt'] = {'http_proxy': apt_proxy}

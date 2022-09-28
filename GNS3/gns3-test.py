@@ -49,8 +49,10 @@ INTERNET_INTERFACE = 'veth'
 parser = argparse.ArgumentParser(description='Start an Ubuntu node in GNS3')
 parser.add_argument('-H', '--host',
                     help='name of the GNS3 host')
-parser.add_argument('-p', '--project', default='BigBlueButton',
-                    help='name of the GNS3 project (default "BigBlueButton")')
+parser.add_argument('-p', '--project', default='Virtual Network',
+                    help='name of the GNS3 project (default "Virtual Network")')
+parser.add_argument('-I', '--interface', default=INTERNET_INTERFACE,
+                    help=f'network interface for Internet access (default "{INTERNET_INTERFACE}")')
 parser.add_argument('--debug', action="store_true",
                     help='allow console login with username ubuntu and password ubuntu')
 group = parser.add_mutually_exclusive_group()
@@ -101,26 +103,13 @@ if args.delete:
     gns3_project.delete_substring(args.delete)
     exit(0)
 
-# Make sure the cloud image exists on the GNS3 server
-#
-# GNS3 doesn't seem to support a HEAD method on its images, so we get
-# a directory of all of them and search for the one we want
+# If the user didn't specify a cloud image, use the first 'ubuntu' image on the server.
+# If the user did specify an image, check to make sure it exists.
 
 if args.client_image:
     assert args.client_image in gns3_server.images()
 else:
     args.client_image = next(image for image in gns3_server.images() if image.startswith('ubuntu'))
-
-# Find out if the system we're running on is configured to use an apt proxy.
-
-apt_proxy = None
-apt_config_command = ['apt-config', '--format', '%f %v%n', 'dump']
-apt_config_proc = subprocess.Popen(apt_config_command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-for config_line in apt_config_proc.stdout.read().decode().split('\n'):
-    if ' ' in config_line:
-        key,value = config_line.split(' ', 1)
-        if key == 'Acquire::http::Proxy':
-            apt_proxy = value
 
 # Obtain any credentials to authenticate ourself to the VM
 
@@ -134,13 +123,16 @@ for keyfilename in SSH_AUTHORIZED_KEYS_FILES:
                     ssh_authorized_keys.append(l)
 
 user_data = {'hostname': 'ubuntu',
-             'network': {'version': 2, 'ethernets': {'ens4': {'dhcp4': 'on', 'dhcp-identifier': 'mac'},
-                                                     'ens5': {'addresses': ['128.8.8.254/24'], 'optional' : True}}},
-             'package_upgrade': True,
-#             'phone_home': {'url': notification_url, 'tries': 1},
+             'ssh_authorized_keys': ssh_authorized_keys,
 }
 
-user_data = {'hostname': 'ubuntu'}
+# This isn't quite what I want.  I want a notification per-boot, not per-instance,
+# so I can detect once an existing node is up and running, and phone_home is
+# per-instance.  But the notification URL will change between boots because
+# the port number that this script is listening to will change.
+
+if gns3_project.notification_url:
+    user_data['phone_home'] = {'url': gns3_project.notification_url, 'tries' : 1}
 
 if args.debug:
     user_data['users'] = [{'name': 'ubuntu',
@@ -151,20 +143,16 @@ if args.debug:
                            'sudo': 'ALL=(ALL) NOPASSWD:ALL',
     }]
 
-# If the system we're running on is configured to use an apt proxy, use it for the ubuntu instance as well.
-#
-# This will break things if the instance can't reach the proxy, so I only use it for ubuntu.
-
-#if apt_proxy:
-#    user_data['apt'] = {'http_proxy': apt_proxy}
-
 switch = gns3_project.switch('InternetSwitch', x=0, y=0)
 
 ubuntu = gns3_project.ubuntu_node(user_data, image=args.client_image, x=200, y=200)
 
-cloud = gns3_project.cloud('Internet', INTERNET_INTERFACE, x=-200, y=200)
+cloud = gns3_project.cloud('Internet', args.interface, x=-200, y=200)
 
 gns3_project.link(ubuntu, 0, switch)
 gns3_project.link(cloud, 0, switch)
 
-gns3_project.start_ubuntu_node(ubuntu)
+if gns3_project.notification_url:
+    gns3_project.start_nodes(ubuntu)
+else:
+    gns3_project.start_node(ubuntu)
