@@ -142,18 +142,38 @@ class Server:
 #     self.server.instance_report_cv
 
 class RequestHandler(BaseHTTPRequestHandler):
+    # cloud-init does a POST; expect a URL query string with a 'hostname'
     def do_POST(self):
         length = self.headers['Content-Length']
         self.send_response_only(100)
         self.end_headers()
 
         content = urllib.parse.parse_qs(self.rfile.read(int(length)))
-        hostname = content[b'hostname'][0]
-        print(hostname.decode(), 'running')
+        hostname = content[b'hostname'][0].decode()
+        print(hostname, 'running')
 
         with self.server.instance_report_cv:
             if not hostname in self.server.instances_reported:
-                self.server.instances_reported.add(hostname)
+                self.server.instances_reported[hostname] = self.client_address[0]
+                self.server.instance_content[hostname] = content
+                self.server.instance_report_cv.notify()
+
+        self.send_response(200)
+        self.end_headers()
+
+    # Cisco CSR100V does a PUT; expect hostname in the URL
+    def do_PUT(self):
+        length = self.headers['Content-Length']
+        self.send_response_only(100)
+        self.end_headers()
+
+        content = urllib.parse.parse_qs(self.rfile.read(int(length)))
+        hostname = self.path.split('/')[-1]
+        print(hostname, 'running')
+
+        with self.server.instance_report_cv:
+            if not hostname in self.server.instances_reported:
+                self.server.instances_reported[hostname] = self.client_address[0]
                 self.server.instance_content[hostname] = content
                 self.server.instance_report_cv.notify()
 
@@ -170,15 +190,15 @@ class Project:
         self.verbose = server.verbose
         self.cached_nodes = None
 
-        script_ip = server.get_local_ip()
+        self.local_ip = server.get_local_ip()
 
-        if script_ip != '127.0.0.1':
+        if self.local_ip != '127.0.0.1':
             server_address = ('', 0)
             self.httpd = HTTPServer(server_address, RequestHandler)
-            self.httpd.instances_reported = set()
+            self.httpd.instances_reported = {}
             self.httpd.instance_content = {}
             self.httpd.instance_report_cv = threading.Condition()
-            self.notification_url = "http://{}:{}/".format(script_ip, self.httpd.server_port)
+            self.notification_url = "http://{}:{}/".format(self.local_ip, self.httpd.server_port)
         else:
             # No point in trying notification callbacks to localhost; it won't work
             self.httpd = None
@@ -311,7 +331,7 @@ class Project:
                 print('Waiting for', [names_by_node_id[nodeid] for nodeid in waiting_for_nodeids_to_start])
                 self.httpd.instance_report_cv.wait()
 
-                running_nodeids.update(node_ids_by_name[inst.decode()] for inst in self.httpd.instances_reported)
+                running_nodeids.update(node_ids_by_name[inst] for inst in self.httpd.instances_reported)
 
                 waiting_for_nodeids_to_start.difference_update(running_nodeids)
 

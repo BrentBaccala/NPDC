@@ -19,10 +19,9 @@
 # running on it.
 
 import gns3
-
+import json
+import napalm
 import argparse
-
-#import napalm
 
 # Which interface on the bare metal system is used to access the Internet from GNS3?
 #
@@ -40,7 +39,10 @@ parser.add_argument('-p', '--project', default='ping-test',
                     help='name of the GNS3 project (default "ping-test")')
 parser.add_argument('-I', '--interface', default=INTERNET_INTERFACE,
                     help=f'network interface for Internet access (default "{INTERNET_INTERFACE}")')
-parser.add_argument('client_image', metavar='FILENAME', nargs='?',
+group = parser.add_mutually_exclusive_group()
+group.add_argument('--delete-everything', action="store_true",
+                    help='delete everything in the project instead of creating it')
+group.add_argument('cisco_image', metavar='FILENAME', nargs='?',
                     help='client image to test')
 args = parser.parse_args()
 
@@ -54,9 +56,21 @@ args = parser.parse_args()
 
 gns3_server = gns3.Server(host=args.host)
 
+# If the user didn't specify a cloud image, use the first 'csr1000v' image on the server.
+# If the user did specify an image, check to make sure it exists.
+
+if args.cisco_image:
+    assert args.cisco_image in gns3_server.images()
+else:
+    args.cisco_image = next(image for image in gns3_server.images() if image.startswith('csr1000v'))
+
 gns3_project = gns3_server.project(args.project, create=True)
 
 gns3_project.open()
+
+if args.delete_everything:
+    gns3_project.delete_everything()
+    exit(0)
 
 # Create an ISO image containing the boot configuration and upload it
 # to the GNS3 project.  We write the config to a temporary file,
@@ -111,12 +125,12 @@ event manager applet send_notification authorization bypass
  action 20 cli command "config t"
  action 30 cli command "no event manager applet send_notification"
  action 40 wait 5
- action 50 cli command "crypto key generate rsa modulus 768"
+ action 50 cli command "crypto key generate rsa modulus 1024"
  action 60 cli command "end"
  action 70 cli command "copy run {0}"
 
 end
-""".format(gns3_project.notification_url)
+""".format(gns3_project.notification_url + "CiscoCSR1000v")
 
 # Configure a cloud node, a switch node, and a CSRv with one interface
 
@@ -124,27 +138,25 @@ print("Configuring nodes...")
 
 switch = gns3_project.switch('InternetSwitch', x=0, y=0)
 
-cisco_image = "csr1000v-universalk9.16.07.01-serial.qcow2"
 images = {'iosxe_config.txt': CSRv_config.encode()}
-config = {"symbol": ":/symbols/router.svg",
-              "x" : 200,
-              "y" : 200
-}
-properties = {"ram": 4*1024, "hda_disk_interface": None}
-cisco = gns3_project.create_qemu_node('CiscoCSR1000v', cisco_image, images=images, config=config, properties=properties)
+config = {"symbol": ":/symbols/router.svg", "x" : 200, "y" : 200}
+# Cisco CSR1000v can't seem to handle the scsi interface gns3.py uses as its default
+properties = {"ram": 4*1024, "hda_disk_interface": 'ide'}
+
+cisco = gns3_project.create_qemu_node('CiscoCSR1000v', args.cisco_image, images=images, config=config, properties=properties)
 
 cloud = gns3_project.cloud('Internet', args.interface, x=-200, y=200)
 
 gns3_project.link(cisco, 0, switch)
 gns3_project.link(cloud, 0, switch)
 
-gns3_project.start_node(cisco)
+gns3_project.start_nodes(cisco)
 
-#print("Running ping test...")
+print("Running ping test...")
 
-#dev = napalm.get_network_driver('ios')
+dev = napalm.get_network_driver('ios')
 
-#for hostname in routers_reported:
-#    device = dev(hostname=hostname, username='cisco', password='cisco')
-#    device.open()
-#    print(json.dumps(device.ping(script_ip), indent=4))
+for hostname,addr in gns3_project.httpd.instances_reported.items():
+    device = dev(hostname=addr, username='cisco', password='cisco')
+    device.open()
+    print(json.dumps(device.ping(gns3_project.local_ip), indent=4))
