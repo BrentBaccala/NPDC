@@ -4,14 +4,14 @@
 # a configuration on the router, notify the script when the router
 # has booted, and test ping connectivity.
 #
-#                  +------+-------------------------------+
-#                  | host |           GNS3                |
-#  +-----------+   |      |                               |
-#  |           |   |   br0| +-----------+     +----------+|
-#  | ping-test |---|------|-|  Virtual  |-----|   Cisco  ||
-#  |           |   |      | |   Switch  |     | CSRv 1000||
-#  +-----------+   |      | +-----------+     +----------+|
-#                  +------+-------------------------------+
+#                   +------+-------------------------------+
+#                   | host |           GNS3                |
+#  +------------+   |      |                               |
+#  |            |   |   br0| +-----------+     +----------+|
+#  | cisco-test |---|------|-|  Virtual  |-----|   Cisco  ||
+#  |            |   |      | |   Switch  |     | CSRv 1000||
+#  +------------+   |      | +-----------+     +----------+|
+#                   +------+-------------------------------+
 #
 # The script depends on having IP connectivity with the virtual
 # router.  GNS3 connects the virtual routers to an interface on the
@@ -32,11 +32,11 @@ INTERNET_INTERFACE = 'veth'
 
 # Parse the command line options
 
-parser = argparse.ArgumentParser(description='Start an Ubuntu node in GNS3')
+parser = argparse.ArgumentParser(description='Start an Cisco test network in GNS3')
 parser.add_argument('-H', '--host',
                     help='name of the GNS3 host')
-parser.add_argument('-p', '--project', default='ping-test',
-                    help='name of the GNS3 project (default "ping-test")')
+parser.add_argument('-p', '--project', default='cisco-test',
+                    help='name of the GNS3 project (default "cisco-test")')
 parser.add_argument('-I', '--interface', default=INTERNET_INTERFACE,
                     help=f'network interface for Internet access (default "{INTERNET_INTERFACE}")')
 group = parser.add_mutually_exclusive_group()
@@ -46,13 +46,7 @@ group.add_argument('cisco_image', metavar='FILENAME', nargs='?',
                     help='client image to test')
 args = parser.parse_args()
 
-# Create a new GNS3 project called 'ping-test'
-#
-# The only required field for a new GNS3 project is 'name'
-#
-# This will error out with a 409 Conflict if 'ping-test' already exists
-
-#print("Creating project...")
+# Open GNS3 server
 
 gns3_server = gns3.Server(host=args.host)
 
@@ -64,6 +58,8 @@ if args.cisco_image:
 else:
     args.cisco_image = next(image for image in gns3_server.images() if image.startswith('csr1000v'))
 
+# Open or create a GNS3 project
+
 gns3_project = gns3_server.project(args.project, create=True)
 
 gns3_project.open()
@@ -71,10 +67,6 @@ gns3_project.open()
 if args.delete_everything:
     gns3_project.delete_everything()
     exit(0)
-
-# Create an ISO image containing the boot configuration and upload it
-# to the GNS3 project.  We write the config to a temporary file,
-# convert it to ISO image, then post the ISO image to GNS3.
 
 print("Building CSRv configuration...")
 
