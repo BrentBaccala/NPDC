@@ -23,8 +23,14 @@
 #
 # The script depends on having IP connectivity with the virtual
 # router.  GNS3 connects the virtual routers to an interface on the
-# host (br0) that should have IP connectivity and a DHCP server
+# host that should have IP connectivity and a DHCP server
 # running on it.
+#
+# Running four or five pods on a C200 has performance problems, even though
+# the machine seems like it has enough RAM (96 GB) and CPU (12 cores).
+# Watch the bare memory virtual memory utilization on top.  The CSRv's
+# seem to like to scan their memory as they boot, so you can watch
+# the resident set size to see their progress.
 
 import gns3
 import math
@@ -48,8 +54,6 @@ parser.add_argument('-p', '--project', default='triangle-pods',
                     help='name of the GNS3 project (default "triangle-pods")')
 parser.add_argument('-n', '--npods', type=int, default=5,
                     help='number of pods to create (default 5)')
-parser.add_argument('--nswitches', type=int, default=4,
-                    help='number of switches to create (default 4)')
 parser.add_argument('-I', '--interface', default=INTERNET_INTERFACE,
                     help=f'network interface for Internet access (default "{INTERNET_INTERFACE}")')
 group = parser.add_mutually_exclusive_group()
@@ -59,7 +63,7 @@ group.add_argument('cisco_image', metavar='FILENAME', nargs='?',
                     help='client image to test')
 args = parser.parse_args()
 
-# Open GNS3 server
+# Open the GNS3 server
 
 gns3_server = gns3.Server(host=args.host)
 
@@ -92,9 +96,11 @@ hostname_x = {}
 hostname_y = {}
 
 for pod in range(1,args.npods+1):
-    for router in ["a", "b", "c"]:
-        hostname_x[mkhostname(pod, router)] = -int(300 * math.cos(pod * 2*math.pi / (args.npods+1)))
-        hostname_y[mkhostname(pod, router)] = int(300 * math.sin(pod * 2*math.pi / (args.npods+1)))
+    for n, router in enumerate(["a", "b", "c"]):
+        hostname_x[mkhostname(pod, router)] = -int(300 * math.cos((pod + .5) * 2*math.pi / args.npods)) \
+            + int(50 * math.cos(n * 2*math.pi / 3))
+        hostname_y[mkhostname(pod, router)] = int(300 * math.sin((pod + .5) * 2*math.pi / args.npods)) \
+            + int(50 * math.sin(n * 2*math.pi / 3))
 
 print("Building CSRv configuration...")
 
@@ -155,10 +161,8 @@ end
 
 print("Configuring nodes...")
 
-switches = []
-
-for n in range(0,args.nswitches):
-    switches.append(gns3_project.switch(f'InternetSwitch{n}', x=0, y=0))
+nports = int((3 * args.npods)/8 + 1) * 8
+switch = gns3_project.switch(f'InternetSwitch', ethernets=nports, x=0, y=0)
 
 CSRv = {}
 
@@ -170,22 +174,16 @@ for hostname in hostnames:
 
     CSRv[hostname] = gns3_project.create_qemu_node(hostname, args.cisco_image, images=images, config=config, properties=properties)
 
-cloud = gns3_project.cloud('Internet', args.interface, x=-200, y=200)
+cloud = gns3_project.cloud('Internet', args.interface, x=-400, y=0)
 
-# Link the cloud to switch 0
+# Link the cloud to the switch
 
-gns3_project.link(cloud, 0, switches[0])
+gns3_project.link(cloud, 0, switch)
 
-# Link switches 1-n to switch 0
+# Link the first interface of each CSRv to the switch
 
-for n in range(1,args.nswitches):
-    gns3_project.link(switches[n], 0, switches[0])
-
-# Link the first interface of each CSRv to a switch
-
-for n, hostname in enumerate(hostnames):
-    switchnum = int(n / 6) + 1
-    gns3_project.link(CSRv[hostname], 0, switches[switchnum])
+for hostname in hostnames:
+    gns3_project.link(CSRv[hostname], 0, switch)
 
 # Link the second and third interfaces of each CSRv pair together
 
@@ -199,10 +197,7 @@ for pod in range(1, args.npods+1):
 
 print("Starting nodes...")
 
-#gns3_project.start_all_nodes()
 gns3_project.start_nodes(*CSRv)
-
-#exit(0)
 
 # TOPOLOGY UP AND RUNNING
 
@@ -216,6 +211,4 @@ for hostname,addr in gns3_project.httpd.instances_reported.items():
     print(json.dumps(device.ping(gns3_project.local_ip), indent=4))
 
 for hostname in hostnames:
-    #print(hostname, hostname_to_ipaddr[hostname])
     print("{:16} IN A {}".format(hostname, gns3_project.httpd.instances_reported[hostname]))
-
