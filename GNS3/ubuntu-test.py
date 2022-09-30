@@ -70,7 +70,7 @@ if args.ls_images:
 
 print("Finding project", args.project)
 
-gns3_project = gns3_server.project(args.project)
+gns3_project = gns3_server.project(args.project, create=True)
 
 gns3_project.open()
 

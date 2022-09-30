@@ -40,6 +40,8 @@ parser.add_argument('-p', '--project', default='cisco-test',
 parser.add_argument('-I', '--interface', default=INTERNET_INTERFACE,
                     help=f'network interface for Internet access (default "{INTERNET_INTERFACE}")')
 group = parser.add_mutually_exclusive_group()
+group.add_argument('--ls', action="store_true",
+                    help='list running nodes')
 group.add_argument('--delete-everything', action="store_true",
                     help='delete everything in the project instead of creating it')
 group.add_argument('cisco_image', metavar='FILENAME', nargs='?',
@@ -66,6 +68,10 @@ gns3_project.open()
 
 if args.delete_everything:
     gns3_project.delete_everything()
+    exit(0)
+
+if args.ls:
+    print([n['name'] for n in gns3_project.nodes()])
     exit(0)
 
 print("Building CSRv configuration...")
