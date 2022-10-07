@@ -21,5 +21,3 @@ to build from the Canonical-distributed Ubuntu images, so you can build your own
 and tweak the one we've got.
 
 It's in the GNS3/ directory.
-
-It's not quite working right.  See the Issues tabs.
