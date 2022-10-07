@@ -74,7 +74,17 @@ if args.ls:
     print([n['name'] for n in gns3_project.nodes()])
     exit(0)
 
-print("Building CSRv configuration...")
+# Create a GNS3 "cloud" for Internet access.
+#
+# It's done early in the script like this so that the gns3 library
+# knows which interface we're using, because it might need that
+# information to construct a notification URL.
+
+cloud = gns3_project.cloud('Internet', args.interface, x=-200, y=200)
+
+# CSR1000v
+
+print("Building CSR1000v configuration...")
 
 CSRv_config = """
 int gig 1
@@ -128,9 +138,9 @@ event manager applet send_notification authorization bypass
  action 70 cli command "copy run {0}"
 
 end
-""".format(gns3_project.notification_url + "CiscoCSR1000v")
+""".format(gns3_project.notification_url() + "CiscoCSR1000v")
 
-# Configure a cloud node, a switch node, and a CSRv with one interface
+# Configure a switch node and a CSR1000v with one interface
 
 print("Configuring nodes...")
 
@@ -142,8 +152,6 @@ config = {"symbol": ":/symbols/router.svg", "x" : 200, "y" : 200}
 properties = {"ram": 4*1024, "hda_disk_interface": 'ide'}
 
 cisco = gns3_project.create_qemu_node('CiscoCSR1000v', args.cisco_image, images=images, config=config, properties=properties)
-
-cloud = gns3_project.cloud('Internet', args.interface, x=-200, y=200)
 
 gns3_project.link(cisco, 0, switch)
 gns3_project.link(cloud, 0, switch)
@@ -157,4 +165,4 @@ dev = napalm.get_network_driver('ios')
 for hostname,addr in gns3_project.httpd.instances_reported.items():
     device = dev(hostname=addr, username='cisco', password='cisco')
     device.open()
-    print(json.dumps(device.ping(gns3_project.local_ip), indent=4))
+    print(json.dumps(device.ping(gns3_project.get_local_ip()), indent=4))

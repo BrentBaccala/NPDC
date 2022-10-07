@@ -85,6 +85,10 @@ if args.delete_everything:
     gns3_project.delete_everything()
     exit(0)
 
+# Start with the cloud, because we might need this interface to create a callback URL.
+
+cloud = gns3_project.cloud('Internet', args.interface, x=-400, y=0)
+
 # The CSRv's
 
 def mkhostname(pod, router):
@@ -166,15 +170,15 @@ switch = gns3_project.switch(f'InternetSwitch', ethernets=nports, x=0, y=0)
 
 CSRv = {}
 
+notification_url = gns3_project.notification_url()
+
 for hostname in hostnames:
-    images = {'iosxe_config.txt': CSRv_config(hostname, gns3_project.notification_url + hostname).encode()}
+    images = {'iosxe_config.txt': CSRv_config(hostname, notification_url + hostname).encode()}
     config = {"symbol": ":/symbols/router.svg", "x" : hostname_x[hostname], "y" : hostname_y[hostname]}
     # Cisco CSR1000v can't seem to handle the scsi interface gns3.py uses as its default
     properties = {"ram": 4*1024, "hda_disk_interface": 'ide', 'adapters': 3}
 
     CSRv[hostname] = gns3_project.create_qemu_node(hostname, args.cisco_image, images=images, config=config, properties=properties)
-
-cloud = gns3_project.cloud('Internet', args.interface, x=-400, y=0)
 
 # Link the cloud to the switch
 
@@ -205,10 +209,12 @@ print("Running ping tests...")
 
 dev = napalm.get_network_driver('ios')
 
+local_ip = gns3_project.get_local_ip()
+
 for hostname,addr in gns3_project.httpd.instances_reported.items():
     device = dev(hostname=addr, username='cisco', password='cisco')
     device.open()
-    print(json.dumps(device.ping(gns3_project.local_ip), indent=4))
+    print(json.dumps(device.ping(local_ip), indent=4))
 
 for hostname in hostnames:
     print("{:16} IN A {}".format(hostname, gns3_project.httpd.instances_reported[hostname]))

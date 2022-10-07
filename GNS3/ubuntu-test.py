@@ -114,13 +114,22 @@ user_data = {'hostname': 'ubuntu',
              'ssh_authorized_keys': ssh_authorized_keys,
 }
 
+# Create a GNS3 "cloud" for Internet access.
+#
+# It's done early in the script like this so that the gns3 library
+# knows which interface we're using, because it might need that
+# information to construct a notification URL.
+
+cloud = gns3_project.cloud('Internet', args.interface, x=-200, y=200)
+
 # This isn't quite what I want.  I want a notification per-boot, not per-instance,
 # so I can detect once an existing node is up and running, and phone_home is
 # per-instance.  But the notification URL will change between boots because
 # the port number that this script is listening to will change.
 
-if gns3_project.notification_url:
-    user_data['phone_home'] = {'url': gns3_project.notification_url, 'tries' : 1}
+notification_url = gns3_project.notification_url()
+if notification_url:
+    user_data['phone_home'] = {'url': notification_url, 'tries' : 1}
 
 if args.debug:
     user_data['users'] = [{'name': 'ubuntu',
@@ -135,8 +144,6 @@ switch = gns3_project.switch('InternetSwitch', x=0, y=0)
 
 ubuntu = gns3_project.ubuntu_node(user_data, image=args.client_image, x=200, y=200)
 
-cloud = gns3_project.cloud('Internet', args.interface, x=-200, y=200)
-
 gns3_project.link(ubuntu, 0, switch)
 gns3_project.link(cloud, 0, switch)
 
@@ -146,7 +153,7 @@ gns3_project.link(cloud, 0, switch)
 # The project might not have a notification_url if the script couldn't figure out
 # a local IP address suitable for a callback.
 
-if gns3_project.notification_url:
+if notification_url:
     gns3_project.start_nodes(ubuntu)
 else:
     gns3_project.start_node(ubuntu)

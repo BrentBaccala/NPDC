@@ -22,6 +22,7 @@ import os
 import tempfile
 import urllib.parse
 import ipaddress
+import netifaces as ni
 
 import socket
 import threading
@@ -190,19 +191,54 @@ class Project:
         self.verbose = server.verbose
         self.cached_nodes = None
 
-        self.local_ip = server.get_local_ip()
+        # Bind to a local TCP port that will listen for callbacks.
+        #
+        # We don't start the server running yet, but we want to get a
+        # port number right away so we can construct a callback URL to
+        # feed to device configurations.
 
-        if self.local_ip != '127.0.0.1':
-            server_address = ('', 0)
-            self.httpd = HTTPServer(server_address, RequestHandler)
-            self.httpd.instances_reported = {}
-            self.httpd.instance_content = {}
-            self.httpd.instance_report_cv = threading.Condition()
-            self.notification_url = "http://{}:{}/".format(self.local_ip, self.httpd.server_port)
+        server_address = ('', 0)
+        self.httpd = HTTPServer(server_address, RequestHandler)
+        self.httpd.instances_reported = {}
+        self.httpd.instance_content = {}
+        self.httpd.instance_report_cv = threading.Condition()
+
+    def get_local_ip(self):
+        """
+        Returns a local IP address that can be used by devices in the project to communicate with the script.
+        May return None if a suitable local IP address can't be determined.
+        """
+        # Get the local IP address used to communicate with the GNS3
+        # server.  Not the GNS3 server's address, but rather the local
+        # machine's address that we use to send messages to the GNS3
+        # server.  If that address isn't 127.0.0.1 (localhost), use it.
+        server_local_ip = self.server.get_local_ip()
+        if server_local_ip != '127.0.0.1':
+            return server_local_ip
         else:
-            # No point in trying notification callbacks to localhost; it won't work
-            self.httpd = None
-            self.notification_url = None
+            # Otherwise, find the first interface on the first cloud node (if it exists)
+            try:
+                first_cloud_node = next(node for node in self.nodes() if node['node_type'] == 'cloud')
+                interface = first_cloud_node['properties']['ports_mapping'][0]['interface']
+
+                # If the interface is virtual, find and record its
+                # mate's first IP address, which is the address we can
+                # send to.
+
+                ip_proc = subprocess.Popen(['ip', 'link', 'show', interface], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+                first_field = ip_proc.stdout.read().decode().split()[1].split('@')
+                if first_field[0] == interface:
+                    paired_interface = first_field[1].split(':')[0]
+                    return ni.ifaddresses(paired_interface)[ni.AF_INET][0]['addr']
+            except (StopIteration, ValueError):
+                # StopIteration if there are no cloud nodes
+                # ValueError if there are no IP addresses on the paired interface
+                pass
+
+            return None
+
+    def notification_url(self):
+        return "http://{}:{}/".format(self.get_local_ip(), self.httpd.server_port)
 
     def open(self):
         if self.verbose: print("Opening project", self.project_id)
