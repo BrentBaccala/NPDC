@@ -184,6 +184,12 @@ for hostname in hostnames:
 
 gns3_project.link(cloud, 0, switch)
 
+# Can't make this check before a link has been connected to the cloud
+
+cloud_status = gns3_project.node(cloud['node_id'])['status']
+if cloud_status != 'started':
+    print(f"Cloud node reports status '{cloud_status}'; interface '{args.interface}' might be unavailable")
+
 # Link the first interface of each CSRv to the switch
 
 for hostname in hostnames:

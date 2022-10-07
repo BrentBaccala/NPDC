@@ -147,6 +147,12 @@ ubuntu = gns3_project.ubuntu_node(user_data, image=args.client_image, x=200, y=2
 gns3_project.link(ubuntu, 0, switch)
 gns3_project.link(cloud, 0, switch)
 
+# Can't make this check before a link has been connected to the cloud
+
+cloud_status = gns3_project.node(cloud['node_id'])['status']
+if cloud_status != 'started':
+    print(f"Cloud node reports status '{cloud_status}'; interface '{args.interface}' might be unavailable")
+
 # The difference between these two is that start_nodes waits for notification that
 # the nodes booted, while start_node does not.
 #

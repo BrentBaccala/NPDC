@@ -256,6 +256,12 @@ class Project:
         result = requests.delete(self.url)
         result.raise_for_status()
 
+    def node(self, nodeid):
+        url = "{}/nodes/{}".format(self.url, nodeid)
+        result = requests.get(url, auth=self.auth)
+        result.raise_for_status()
+        return result.json()
+
     def nodes(self):
         "Returns a list of dictionaries, each corresponding to a single gns3 node"
 

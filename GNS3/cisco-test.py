@@ -156,6 +156,12 @@ cisco = gns3_project.create_qemu_node('CiscoCSR1000v', args.cisco_image, images=
 gns3_project.link(cisco, 0, switch)
 gns3_project.link(cloud, 0, switch)
 
+# Can't make this check before a link has been connected to the cloud
+
+cloud_status = gns3_project.node(cloud['node_id'])['status']
+if cloud_status != 'started':
+    print(f"Cloud node reports status '{cloud_status}'; interface '{args.interface}' might be unavailable")
+
 gns3_project.start_nodes(cisco)
 
 print("Running ping test...")
