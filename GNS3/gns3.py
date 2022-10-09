@@ -14,6 +14,7 @@
 # GNS3/ubuntu.py script in BrentBaccala's NPDC github repository.
 
 import sys
+import glob
 import requests
 from requests.auth import HTTPBasicAuth
 import json
@@ -54,8 +55,7 @@ for config_line in apt_config_proc.stdout.read().decode().split('\n'):
 class Server:
 
     def __init__(self, host=None, port=None, user=None, password=None, verbose=True):
-        self.url = None
-        self.auth = None
+
         self.verbose = verbose
 
         # Obtain the credentials needed to authenticate ourself to the GNS3 server
@@ -63,18 +63,22 @@ class Server:
         # Look through the credential files for the first Server entry that matches
         # 'host' and 'port', or just the first entry if those two are None.
 
-        for propfilename in GNS3_CREDENTIAL_FILES:
-            propfilename = os.path.expanduser(propfilename)
-            if os.path.exists(propfilename):
-                config = configparser.ConfigParser()
-                try:
-                    config.read(propfilename)
-                    if not host or host == config['Server']['host']:
-                        if not port or port == config['Server']['port']:
-                            self.url = "http://{}:{}/v2".format(config['Server']['host'], config['Server']['port'])
-                            self.auth = HTTPBasicAuth(config['Server']['user'], config['Server']['password'])
-                except:
-                    pass
+        def find_credentials():
+            for propfilename_wildcard in GNS3_CREDENTIAL_FILES:
+                for propfilename in glob.glob(os.path.expanduser(propfilename_wildcard)):
+                    config = configparser.ConfigParser()
+                    try:
+                        config.read(propfilename)
+                        if not host or host == config['Server']['host']:
+                            if not port or port == config['Server']['port']:
+                                url = "http://{}:{}/v2".format(config['Server']['host'], config['Server']['port'])
+                                auth = HTTPBasicAuth(config['Server']['user'], config['Server']['password'])
+                                return (url, auth)
+                    except:
+                        pass
+            return (None, None)
+
+        self.url, self.auth = find_credentials()
 
         if not self.url or not self.auth:
             raise Exception("No matching GNS3 server configuration found")
