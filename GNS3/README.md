@@ -6,7 +6,11 @@ gns3 server *and* restarting the gns3 server, which implies stopping and restart
 
 ## Setup
 
-1. `install-gns3.sh` will install a new user 'gns3' that operates a
+1. gns3 is not in the standard Ubuntu distribution, but the gns3 team maintains an Ubuntu Personal Package Archive (PPA).
+   Also, I like to run the gns3 as system service as its own user.  Network access also needs to be configured.
+   A script is provided to configure all of this.
+
+   `install-gns3.sh` will install a new user 'gns3' that operates a
    gns3server and keeps all of the gns3 configuration and virtual
    drives (which can be quite large) in /home/gns3.  A virtual network interface called 'veth'
    will also be created, suitable for use by gns3 cloud nodes, with the
