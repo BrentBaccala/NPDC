@@ -1,15 +1,24 @@
 #!/bin/sh
 #
-# This will prompt interactively several times:
+# This script will install a new user 'gns3' that operates a
+# gns3server and keeps all of the gns3 configuration and virtual
+# drives in /home/gns3.  A virtual network interface called 'veth'
+# will also be created, suitable for use by gns3 cloud nodes, with the
+# bare metal machine running this script configured as a DHCP server
+# and NAT gateway.  The gns3 PPA is added as an apt repository, and
+# necessary packages are installed.
+#
+# The default subnet is 192.168.8.0/24, but this can be overridden
+# by setting the SUBNET environment variable.
+#
+# The script will prompt interactively several times:
 #    - to confirm adding the repository
 #    - to confirm installing the packages
 #    - to ask if non-superusers should be able to run gns3 (say yes)
 #
-# SUBNET=192.168.8.0/24
-#
 # Environment variables can be used to silence these prompts:
 #
-# YES=-y will stop prompts #1 and #2
+# APT_OPTS=-y will stop prompts #1 and #2
 # DEBIAN_FRONTEND=noninteractive will stop prompt #3
 
 # This is where I'd really like to use Python
@@ -28,17 +37,21 @@ BROADCAST=$SUBNET_PREFIX.255
 FIRST_DHCP=$SUBNET_PREFIX.129
 LAST_DHCP=$SUBNET_PREFIX.199
 
-sudo -E add-apt-repository $YES ppa:gns3
+sudo -E add-apt-repository $APT_OPTS ppa:gns3
 
-sudo -E apt $YES install gns3-server makepasswd isc-dhcp-server iptables-persistent
+sudo -E apt $APT_OPTS install gns3-server makepasswd isc-dhcp-server iptables-persistent
 
-# should this be a --system user?
+# I wondered if this should this be a --system user, but sometimes I
+# want to su to gns3 to stop and restart the gns3server.
+
 sudo adduser --gecos "GNS3 server" --disabled-password gns3
 
 sudo adduser gns3 kvm
 sudo adduser gns3 ubridge
 
 sudo loginctl enable-linger gns3
+
+# This is for convenience when su'ing to gns3.  It makes systemctl --user work.
 
 echo 'export XDG_RUNTIME_DIR=/run/user/$(id -u)' | sudo su gns3 -c "cat >>/home/gns3/.bashrc"
 
@@ -64,12 +77,17 @@ user = gns3
 password = $GNS3_PASSWORD
 EOF
 
-# These don't work because .bashrc doesn't get sourced to set XDG_RUNTIME_DIR
-sudo su gns3 -c "systemctl --user enable gns3"
-sudo su gns3 -c "systemctl --user start gns3"
+# .bashrc doesn't get sourced to set XDG_RUNTIME_DIR
+#
+# "In general, $HOME/.bashrc is executed for non-interactive login shells
+# but no script can be guaranteed to run for a non-interactive non-login shell."
+# https://stackoverflow.com/a/55893600/1493790
+#
+# Requesting a login shell doesn't work, either, because .bashrc starts with
+# a check for non-interactive invocation and does nothing if so.
 
-echo GNS3 user = gns3
-echo GNS3 password = $GNS3_PASSWORD
+sudo su gns3 -c "env XDG_RUNTIME_DIR=/run/user/$(id -u gns3) systemctl --user enable gns3"
+sudo su gns3 -c "env XDG_RUNTIME_DIR=/run/user/$(id -u gns3) systemctl --user start gns3"
 
 # Routed configuration
 
@@ -118,11 +136,14 @@ sudo sed -i /net.ipv4.ip_forward=1/s/^#// /etc/sysctl.conf
 
 # If you want to access the virtual network devices from other machines,
 # you'll need to adjust your network configuration to route traffic for the virtual subnet to the machine.
+#
+# Otherwise, we'll use NAT.
 
 # NAT
 sudo iptables -t nat -A POSTROUTING -s $SUBNET -j MASQUERADE
 
-# If you configure NAT, the following commands will make that change persist over reboots:
+# This makes the NAT setting persist over reboots
+sudo -E dpkg-reconfigure iptables-persistent
 
-# sudo apt install iptables-persistent
-sudo DEBIAN_FRONTEND=noninteractive dpkg-reconfigure iptables-persistent
+echo GNS3 user = gns3
+echo GNS3 password = $GNS3_PASSWORD
