@@ -7,7 +7,7 @@ gns3 server *and* restarting the gns3 server, which implies stopping and restart
 ## Setup
 
 1. gns3 is not in the standard Ubuntu distribution, but the gns3 team maintains an Ubuntu Personal Package Archive (PPA).
-   Also, I like to run the gns3 as system service as its own user.  Network access also needs to be configured.
+   Also, I like to run the gns3 as system service as its own user.  Internet access also needs to be configured.
    A script is provided to configure all of this.
 
    `install-gns3.sh` will install a new user 'gns3' that operates a
@@ -29,10 +29,6 @@ gns3 server *and* restarting the gns3 server, which implies stopping and restart
 
    I think you want "Run applications on a remote server" even if you're running the server on your local machine, because the `gns3-bbb.py` script needs access to the server's REST API.
 
-3. Configure Internet network access to the gns3 virtual network.
-   How to do this exactly is beyond the scope of this README.
-   Internet access is required since the virtual devices need to download Internet packages during installation.
-
 1. Configure authentication to gns3-server in either `~/gns3_server.conf` or `~/.config/GNS3/2.2/gns3_server.conf`.
 
    If you used the gns3 GUI to test access to the server, you already have a suitable `~/.config/GNS3/2.2/gns3_server.conf`.
@@ -45,7 +41,8 @@ gns3 server *and* restarting the gns3 server, which implies stopping and restart
 
    `./upload-image.py ubuntu-20.04-server-cloudimg-amd64.img`
 
-   The most uncommon Python3 package that this script uses is `python3-requests-toolbelt`
+   The most uncommon Python3 package that this script uses is `python3-requests-toolbelt`.
+   You may need to install it with apt.
 
    If this step works, then you have REST API access to the GNS3 server.
 
@@ -66,6 +63,12 @@ gns3 server *and* restarting the gns3 server, which implies stopping and restart
    This step adds the GUI packages to the Ubuntu 20 cloud image and creates a new cloud image used for the test clients. It takes about half an hour.
 
 1. Upload the GUI image to the gns3 server using `upload-image.py`
+
+1. Add the GUI image to the appliance file `opendesktop.gns3a` like this:
+   `./add-appliance.py -n 20 FILENAME`
+
+1. Import the appliance file into the GNS3 GUI, and you will have a drag-and-drop Ubuntu instance
+   with a full GNOME desktop.
 
 ## Directory of scripts
 
