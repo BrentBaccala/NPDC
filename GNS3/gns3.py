@@ -1,5 +1,17 @@
 #
-# 1. Authentication to GNS3 server
+# Library code to support gns3 operations
+#
+# 1. Python classes Server and Project
+#
+#    Projects typically have a notification_url() and a list of dependencies
+#    built with the depends_on() method so that when start_nodes() is called,
+#    dependent nodes (like routers and gateways) will start first and the
+#    script will wait for notifications before trying to start dependent nodes.
+#
+#    Declaration methods that don't start with create_ will only create
+#    nodes if they don't already exist.
+#
+# 2. Authentication
 #
 #    Provide one of the GNS3_CREDENTIAL_FILES in propfile format;
 #    minimal entries are host/port/user/password in the Server block:
@@ -10,8 +22,20 @@
 #    user = admin
 #    password = password
 #
-# We use an Ubuntu cloud image and a client image created using the
-# GNS3/ubuntu.py script in BrentBaccala's NPDC github repository.
+#    Default GNS3_CREDENTIAL_FILES search path includes the standard GNS3
+#    GUI configuration files.
+#
+# 3. Parent parser to handle common arguments:
+#
+#    -H host (set GNS3 host)
+#    -p project (set GNS3 project)
+#    -I interface (set interface for network access)
+#    --ls-projects
+#    --ls-images
+#    --ls (nodes in a project)
+#    --ls-all (nodes and links with full JSON data)
+#    --delete-everything (all nodes in a project)
+#    --delete string (all nodes in project matching string)
 
 import sys
 import glob
@@ -24,6 +48,8 @@ import tempfile
 import urllib.parse
 import ipaddress
 import netifaces as ni
+
+import argparse
 
 import socket
 import threading
@@ -749,3 +775,71 @@ class Project:
                link['nodes'][0]['node_id'] == node2['node_id']:
                 return
         self.create_link(node1, port1, node2, port2)
+
+# Which interface on the bare metal system is used to access the Internet from GNS3?
+#
+# It should be either a routed virtual link to the bare metal system, or
+# a bridged interface to a physical network device.
+
+DEFAULT_INTERFACE = 'veth'
+
+# Create a standard parser that can be used as a template
+
+def parser(project_name, interface=DEFAULT_INTERFACE):
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument('-H', '--host',
+                        help='name of the GNS3 host')
+    parser.add_argument('-p', '--project', default=project_name,
+                        help=f'name of the GNS3 project (default "{project_name}")')
+    parser.add_argument('-I', '--interface', default=interface,
+                        help=f'network interface for Internet access (default "{interface}")')
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument('--delete-everything', action="store_true",
+                       help='delete everything in the project instead of creating it')
+    group.add_argument('--delete', type=str,
+                       help='delete everything in the project matching a substring')
+    group.add_argument('--ls', action="store_true",
+                       help='list running nodes')
+    group.add_argument('--ls-images', action="store_true",
+                       help='list running nodes')
+    group.add_argument('--ls-all', action="store_true",
+                       help='list running nodes')
+    group.add_argument('--ls-projects', action="store_true",
+                       help='list all projects on server')
+    return parser
+
+def open_project_with_standard_options(args):
+    gns3_server = Server(host=args.host)
+
+    if args.ls_images:
+        print(gns3_server.images())
+        exit(0)
+
+    if args.ls_projects:
+        print([n['name'] for n in gns3_server.projects()])
+        exit(0)
+
+    print("Finding project", args.project)
+
+    gns3_project = gns3_server.project(args.project, create=True)
+
+    gns3_project.open()
+
+    if args.ls:
+        print([n['name'] for n in gns3_project.nodes()])
+        exit(0)
+
+    if args.ls_all:
+        print(json.dumps(gns3_project.nodes(), indent=4))
+        print(json.dumps(gns3_project.links(), indent=4))
+        exit(0)
+
+    if args.delete_everything:
+        gns3_project.delete_everything()
+        exit(0)
+
+    if args.delete:
+        gns3_project.delete_substring(args.delete)
+        exit(0)
+
+    return (gns3_server, gns3_project)

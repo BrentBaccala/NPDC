@@ -26,75 +26,25 @@ import requests
 
 SSH_AUTHORIZED_KEYS_FILES = ['~/.ssh/id_rsa.pub', "~/.ssh/authorized_keys"]
 
-# Which interface on the bare metal system is used to access the Internet from GNS3?
-#
-# It should be either a routed virtual link to the bare metal system, or
-# a bridged interface to a physical network device.
-
-INTERNET_INTERFACE = 'veth'
-
 # Parse the command line options
 
-parser = argparse.ArgumentParser(description='Start an Ubuntu node in GNS3')
-parser.add_argument('-H', '--host',
-                    help='name of the GNS3 host')
-parser.add_argument('-p', '--project', default='ubuntu-test',
-                    help='name of the GNS3 project (default "ubuntu-test")')
-parser.add_argument('-I', '--interface', default=INTERNET_INTERFACE,
-                    help=f'network interface for Internet access (default "{INTERNET_INTERFACE}")')
+parser = argparse.ArgumentParser(parents=[gns3.parser('ubuntu-test')], description='Start an Ubuntu node in GNS3')
+
 parser.add_argument('--disk', type=int,
                     help='set disk size in MB')
 parser.add_argument('-m', '--memory', type=int,
                     help='MBs of virtual RAM (default 256)')
 parser.add_argument('--debug', action="store_true",
                     help='allow console login with username ubuntu and password ubuntu')
-group = parser.add_mutually_exclusive_group()
-group.add_argument('--delete-everything', action="store_true",
-                    help='delete everything in the project instead of creating it')
-group.add_argument('--delete', type=str,
-                    help='delete everything in the project matching a substring')
-group.add_argument('--ls', action="store_true",
-                    help='list running nodes')
-group.add_argument('--ls-images', action="store_true",
-                    help='list running nodes')
-group.add_argument('--ls-all', action="store_true",
-                    help='list running nodes')
-group.add_argument('client_image', metavar='FILENAME', nargs='?',
+
+parser._mutually_exclusive_groups[0].add_argument('client_image', metavar='FILENAME', nargs='?',
                     help='client image to test')
+
 args = parser.parse_args()
 
 # Open the GNS3 server
 
-gns3_server = gns3.Server(host=args.host)
-
-if args.ls_images:
-    print(gns3_server.images())
-    exit(0)
-
-# Find the GNS3 project called project_name
-
-print("Finding project", args.project)
-
-gns3_project = gns3_server.project(args.project, create=True)
-
-gns3_project.open()
-
-if args.ls:
-    print([n['name'] for n in gns3_project.nodes()])
-    exit(0)
-
-if args.ls_all:
-    print(json.dumps(gns3_project.nodes(), indent=4))
-    print(json.dumps(gns3_project.links(), indent=4))
-    exit(0)
-
-if args.delete_everything:
-    gns3_project.delete_everything()
-    exit(0)
-
-if args.delete:
-    gns3_project.delete_substring(args.delete)
-    exit(0)
+gns3_server, gns3_project = gns3.open_project_with_standard_options(args)
 
 # If the user didn't specify a cloud image, use the first 'ubuntu' image on the server.
 # If the user did specify an image, check to make sure it exists.

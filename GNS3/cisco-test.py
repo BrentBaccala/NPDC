@@ -23,34 +23,18 @@ import json
 import napalm
 import argparse
 
-# Which interface on the bare metal system is used to access the Internet from GNS3?
-#
-# It should be either a routed virtual link to the bare metal system, or
-# a bridged interface to a physical network device.
-
-INTERNET_INTERFACE = 'veth'
-
 # Parse the command line options
 
-parser = argparse.ArgumentParser(description='Start an Cisco test network in GNS3')
-parser.add_argument('-H', '--host',
-                    help='name of the GNS3 host')
-parser.add_argument('-p', '--project', default='cisco-test',
-                    help='name of the GNS3 project (default "cisco-test")')
-parser.add_argument('-I', '--interface', default=INTERNET_INTERFACE,
-                    help=f'network interface for Internet access (default "{INTERNET_INTERFACE}")')
-group = parser.add_mutually_exclusive_group()
-group.add_argument('--ls', action="store_true",
-                    help='list running nodes')
-group.add_argument('--delete-everything', action="store_true",
-                    help='delete everything in the project instead of creating it')
-group.add_argument('cisco_image', metavar='FILENAME', nargs='?',
-                    help='client image to test')
+parser = argparse.ArgumentParser(parents=[gns3.parser('cisco-test')], description='Start an Cisco node in GNS3')
+
+parser._mutually_exclusive_groups[0].add_argument('cisco_image', metavar='FILENAME', nargs='?',
+                    help='Cisco CSR1000v image filename')
+
 args = parser.parse_args()
 
 # Open GNS3 server
 
-gns3_server = gns3.Server(host=args.host)
+gns3_server, gns3_project = gns3.open_project_with_standard_options(args)
 
 # If the user didn't specify a cloud image, use the first 'csr1000v' image on the server.
 # If the user did specify an image, check to make sure it exists.
@@ -59,20 +43,6 @@ if args.cisco_image:
     assert args.cisco_image in gns3_server.images()
 else:
     args.cisco_image = next(image for image in gns3_server.images() if image.startswith('csr1000v'))
-
-# Open or create a GNS3 project
-
-gns3_project = gns3_server.project(args.project, create=True)
-
-gns3_project.open()
-
-if args.delete_everything:
-    gns3_project.delete_everything()
-    exit(0)
-
-if args.ls:
-    print([n['name'] for n in gns3_project.nodes()])
-    exit(0)
 
 # Create a GNS3 "cloud" for Internet access.
 #
