@@ -22,6 +22,7 @@ import os
 import json
 import argparse
 import subprocess
+import requests
 
 SSH_AUTHORIZED_KEYS_FILES = ['~/.ssh/id_rsa.pub', "~/.ssh/authorized_keys"]
 
@@ -41,6 +42,10 @@ parser.add_argument('-p', '--project', default='ubuntu-test',
                     help='name of the GNS3 project (default "ubuntu-test")')
 parser.add_argument('-I', '--interface', default=INTERNET_INTERFACE,
                     help=f'network interface for Internet access (default "{INTERNET_INTERFACE}")')
+parser.add_argument('--disk', type=int,
+                    help='set disk size in MB')
+parser.add_argument('-m', '--memory', type=int,
+                    help='MBs of virtual RAM (default 256)')
 parser.add_argument('--debug', action="store_true",
                     help='allow console login with username ubuntu and password ubuntu')
 group = parser.add_mutually_exclusive_group()
@@ -142,7 +147,7 @@ if args.debug:
 
 switch = gns3_project.switch('InternetSwitch', x=0, y=0)
 
-ubuntu = gns3_project.ubuntu_node(user_data, image=args.client_image, x=200, y=200)
+ubuntu = gns3_project.ubuntu_node(user_data, image=args.client_image, ram=args.memory, x=200, y=200)
 
 gns3_project.link(ubuntu, 0, switch)
 gns3_project.link(cloud, 0, switch)
@@ -152,6 +157,19 @@ gns3_project.link(cloud, 0, switch)
 cloud_status = gns3_project.node(cloud['node_id'])['status']
 if cloud_status != 'started':
     print(f"Cloud node reports status '{cloud_status}'; interface '{args.interface}' might be unavailable")
+
+# RESIZE THE NODE'S DISK (IF REQUESTED)
+
+if args.disk and args.disk > 2048:
+
+    print("Extending disk by {} MB...".format(args.disk - 2048))
+
+    url = "{}/compute/projects/{}/qemu/nodes/{}/resize_disk".format(gns3_server.url, gns3_project.project_id, ubuntu['node_id'])
+
+    resize_obj = {'drive_name' : 'hda', 'extend' : args.disk - 2048}
+
+    result = requests.post(url, auth=gns3_server.auth, data=json.dumps(resize_obj))
+    result.raise_for_status()
 
 # The difference between these two is that start_nodes waits for notification that
 # the nodes booted, while start_node does not.
