@@ -528,7 +528,7 @@ class Project:
         qemu = result.json()
 
         if disk and disk > 2048:
-            url = "{}/compute/projects/{}/qemu/nodes/{}/resize_disk".format(self.url, qemu['node_id'])
+            url = "{}/compute/projects/{}/qemu/nodes/{}/resize_disk".format(self.server.url, self.project_id, qemu['node_id'])
             resize_obj = {'drive_name' : 'hda', 'extend' : disk - 2048}
             result = requests.post(url, auth=self.auth, data=json.dumps(resize_obj))
             result.raise_for_status()
@@ -644,7 +644,7 @@ class Project:
         ubuntu = result.json()
 
         if disk and disk > 2048:
-            url = "{}/compute/projects/{}/qemu/nodes/{}/resize_disk".format(self.url, ubuntu['node_id'])
+            url = "{}/compute/projects/{}/qemu/nodes/{}/resize_disk".format(self.server.url, self.project_id, ubuntu['node_id'])
             resize_obj = {'drive_name' : 'hda', 'extend' : disk - 2048}
             result = requests.post(url, auth=self.auth, data=json.dumps(resize_obj))
             result.raise_for_status()
