@@ -134,6 +134,7 @@ class Server:
             if project['name'] == project_name:
                 return Project(self, project['project_id'])
         if create:
+            print("Creating project", project_name)
             new_project = {'name': project_name, 'auto_close' : False}
             url = "{}/projects".format(self.url)
             result = requests.post(url, auth=self.auth, data=json.dumps(new_project))
@@ -286,12 +287,6 @@ class Project:
         result = requests.delete(self.url)
         result.raise_for_status()
 
-    def node(self, nodeid):
-        url = "{}/nodes/{}".format(self.url, nodeid)
-        result = requests.get(url, auth=self.auth)
-        result.raise_for_status()
-        return result.json()
-
     def nodes(self):
         "Returns a list of dictionaries, each corresponding to a single gns3 node"
 
@@ -300,6 +295,24 @@ class Project:
         result.raise_for_status()
         self.cached_nodes = result.json()
         return self.cached_nodes
+
+    def node(self, nodeid):
+        if not self.cached_nodes:
+            self.nodes()
+        matching_nodes = [n for n in self.cached_nodes if n['node_id'] == nodeid or n['name'] == nodeid]
+        if matching_nodes:
+            return matching_nodes[0]
+        else:
+            return None
+        #url = "{}/nodes/{}".format(self.url, nodeid)
+        #result = requests.get(url, auth=self.auth)
+        #result.raise_for_status()
+        #return result.json()
+
+    def node_names(self):
+        if not self.cached_nodes:
+            self.nodes()
+        return [n['name'] for n in self.cached_nodes]
 
     def snap_to_grid(self, grid_size = 50):
         "Adjust all nodes in the project so their coordinates are a multiple of grid_size"
@@ -823,7 +836,7 @@ def open_project_with_standard_options(args):
     gns3_server = Server(host=args.host)
 
     if args.ls_images:
-        print(gns3_server.images())
+        print('\n'.join(gns3_server.images()))
         exit(0)
 
     if args.ls_projects:
