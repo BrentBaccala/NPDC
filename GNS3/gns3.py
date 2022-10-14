@@ -301,6 +301,15 @@ class Project:
         self.cached_nodes = result.json()
         return self.cached_nodes
 
+    def snap_to_grid(self, grid_size = 50):
+        "Adjust all nodes in the project so their coordinates are a multiple of grid_size"
+        for node in self.nodes():
+            if (node['x'] % grid_size != 0) or (node['y'] % grid_size != 0):
+                update = {'x': round(node['x'] / grid_size) * grid_size,
+                          'y': round(node['y'] / grid_size) * grid_size}
+                result = requests.put(f"{self.url}/nodes/{node['node_id']}", auth=self.auth, data=json.dumps(update))
+                result.raise_for_status()
+
     def links(self):
         "Returns a list of dictionaries, each corresponding to a single gns3 link"
 
@@ -806,6 +815,8 @@ def parser(project_name, interface=DEFAULT_INTERFACE):
                        help='list running nodes')
     group.add_argument('--ls-projects', action="store_true",
                        help='list all projects on server')
+    group.add_argument('--snap-to-grid', action="store_true",
+                       help='snap all nodes to a 50x50 grid')
     return parser
 
 def open_project_with_standard_options(args):
@@ -840,6 +851,10 @@ def open_project_with_standard_options(args):
 
     if args.delete:
         gns3_project.delete_substring(args.delete)
+        exit(0)
+
+    if args.snap_to_grid:
+        gns3_project.snap_to_grid()
         exit(0)
 
     return (gns3_server, gns3_project)
