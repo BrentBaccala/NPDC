@@ -52,8 +52,10 @@ if ! dpkg -s gns3-server >/dev/null 2>&1; then
 	add-apt-repository $APT_OPTS ppa:gns3
     fi
     # Don't install recommends, because that depends on xvnc and a big
-    # chuck of X11 stuff, that we don't need for a server.
-    apt $APT_OPTS install --no-install-recommends gns3-server makepasswd
+    # chuck of X11 stuff, that we don't need for a server, but we will
+    # need the recommended package dynamips for the default Ethernet
+    # switch.
+    apt $APT_OPTS install --no-install-recommends gns3-server dynamips makepasswd genisoimage
 else
     echo "package 'gns3-server' already installed"
 fi
@@ -140,33 +142,31 @@ EOF
 else
     echo "service 'veth' already exists"
 fi
-    # You should now be able to `ping 192.168.8.1`
-if ! dpkg -s isc-dhcp-server >/dev/null 2>&1; then
-    apt $APT_OPTS install isc-dhcp-server
 
-    tee -a /etc/dhcp/dhcpd.conf >/dev/null <<EOF
-      subnet $ZERO_HOST netmask 255.255.255.0 {
-        range $FIRST_DHCP $LAST_DHCP;
-        option routers $FIRST_HOST;
-      }
+if ! dpkg -s dnsmasq >/dev/null 2>&1; then
+
+    mkdir -p /etc/dnsmasq.d
+    tee -a /etc/dnsmasq.d/gns3 >/dev/null <<EOF
+listen-address=$FIRST_HOST
+# Only bind to $FIRST_HOST for DNS service
+bind-interfaces
+dhcp-range=$FIRST_DHCP,$LAST_DHCP,12h
 EOF
 
-    # Also in `/etc/dhcp/dhcpd.conf`, set `domain-name-servers` to your local DNS servers.
-    # They can be found by looking at the output of `resolvectl`.
-    # This would ideally be done automatically
-    # You may also want to set `domain-name` in that same file to your local DNS name.
-
-    systemctl enable isc-dhcp-server
-    systemctl start isc-dhcp-server
+    apt $APT_OPTS install dnsmasq
+    systemctl enable dnsmasq
+    systemctl start dnsmasq
+    # Now I'd like to do this, but it isn't working the way I expect
+    # sudo resolvectl dns veth-host 192.168.8.1
 else
-    echo "package 'isc-dhcp-server' already installed"
+    echo "package 'dnsmasq' already installed"
 fi
 
 # We need packet forwarding turned on, otherwise the virtual machines
 # won't be able to access the Internet.
 
 if grep -q '#net.ipv4.ip_forward=1' /etc/sysctl.conf; then
-    echo "Modifing `/etc/sysctl.conf` to enable packet forwarding"
+    echo "Modifing '/etc/sysctl.conf' to enable packet forwarding"
     sed -i /net.ipv4.ip_forward=1/s/^#// /etc/sysctl.conf
     echo "Enabling packet forwarding for current boot"
     sysctl net.ipv4.ip_forward=1
