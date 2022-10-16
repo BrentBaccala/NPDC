@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 #
 # This script will install a new user 'gns3' that operates a
 # gns3server and keeps all of the gns3 configuration and virtual
@@ -37,26 +37,45 @@ BROADCAST=$SUBNET_PREFIX.255
 FIRST_DHCP=$SUBNET_PREFIX.129
 LAST_DHCP=$SUBNET_PREFIX.199
 
-sudo -E add-apt-repository $APT_OPTS ppa:gns3
+if [ $EUID != 0 ]; then
+    echo "You must run this command as root."
+    exit 1
+fi
 
-sudo -E apt $APT_OPTS install gns3-server makepasswd isc-dhcp-server iptables-persistent
+# https://stackoverflow.com/questions/32145643/how-to-use-ctrlc-to-stop-whole-script-not-just-current-command
+trap "echo; exit" INT
+
+if ! dpkg -s gns3-server >/dev/null 2>&1; then
+    if find /etc/apt/ -name *.list | xargs cat | grep -v '^#' | grep gns3/ppa >/dev/null; then
+	echo "PPA 'gns3' already added"
+    else
+	add-apt-repository $APT_OPTS ppa:gns3
+    fi
+    # Don't install recommends, because that depends on xvnc and a big
+    # chuck of X11 stuff, that we don't need for a server.
+    apt $APT_OPTS install --no-install-recommends gns3-server makepasswd
+else
+    echo "package 'gns3-server' already installed"
+fi
 
 # I wondered if this should this be a --system user, but sometimes I
 # want to su to gns3 to stop and restart the gns3server.
 
-sudo adduser --gecos "GNS3 server" --disabled-password gns3
+if ! id -u gns3 >/dev/null 2>&1; then
+    echo "Adding gns3 user"
+    adduser --gecos "GNS3 server" --disabled-password gns3
 
-sudo adduser gns3 kvm
-sudo adduser gns3 ubridge
+    adduser gns3 kvm
+    adduser gns3 ubridge
 
-sudo loginctl enable-linger gns3
+    loginctl enable-linger gns3
 
-# This is for convenience when su'ing to gns3.  It makes systemctl --user work.
+    # This is for convenience when su'ing to gns3.  It makes systemctl --user work.
 
-echo 'export XDG_RUNTIME_DIR=/run/user/$(id -u)' | sudo su gns3 -c "cat >>/home/gns3/.bashrc"
+    echo 'export XDG_RUNTIME_DIR=/run/user/$(id -u)' | su gns3 -c "cat >>/home/gns3/.bashrc"
 
-sudo su gns3 -c "mkdir -p /home/gns3/.config/systemd/user"
-sudo su gns3 -c "cat >/home/gns3/.config/systemd/user/gns3.service" <<EOF
+    su gns3 -c "mkdir -p /home/gns3/.config/systemd/user"
+    su gns3 -c "cat >/home/gns3/.config/systemd/user/gns3.service" <<EOF
 [Unit]
 Description=GNS3 server
 
@@ -68,30 +87,37 @@ ExecStart=/usr/bin/gns3server
 WantedBy=default.target
 EOF
 
-GNS3_PASSWORD=$(makepasswd --chars 20)
-sudo su gns3 -c "mkdir -p /home/gns3/.config/GNS3/2.2"
-sudo su gns3 -c "cat >/home/gns3/.config/GNS3/2.2/gns3_server.conf" <<EOF
+    GNS3_PASSWORD=$(makepasswd --chars 20)
+    su gns3 -c "mkdir -p /home/gns3/.config/GNS3/2.2"
+    su gns3 -c "cat >/home/gns3/.config/GNS3/2.2/gns3_server.conf" <<EOF
 [Server]
 auth = True
 user = gns3
 password = $GNS3_PASSWORD
 EOF
 
-# .bashrc doesn't get sourced to set XDG_RUNTIME_DIR
-#
-# "In general, $HOME/.bashrc is executed for non-interactive login shells
-# but no script can be guaranteed to run for a non-interactive non-login shell."
-# https://stackoverflow.com/a/55893600/1493790
-#
-# Requesting a login shell doesn't work, either, because .bashrc starts with
-# a check for non-interactive invocation and does nothing if so.
+    # .bashrc doesn't get sourced to set XDG_RUNTIME_DIR
+    #
+    # "In general, $HOME/.bashrc is executed for non-interactive login shells
+    # but no script can be guaranteed to run for a non-interactive non-login shell."
+    # https://stackoverflow.com/a/55893600/1493790
+    #
+    # Requesting a login shell doesn't work, either, because .bashrc starts with
+    # a check for non-interactive invocation and does nothing if so.
 
-sudo su gns3 -c "env XDG_RUNTIME_DIR=/run/user/$(id -u gns3) systemctl --user enable gns3"
-sudo su gns3 -c "env XDG_RUNTIME_DIR=/run/user/$(id -u gns3) systemctl --user start gns3"
+    su gns3 -c "env XDG_RUNTIME_DIR=/run/user/$(id -u gns3) systemctl --user enable gns3"
+    su gns3 -c "env XDG_RUNTIME_DIR=/run/user/$(id -u gns3) systemctl --user start gns3"
+else
+    echo "user 'gns3' already exists"
+    GNS3_PASSWORD=$(grep password /home/gns3/.config/GNS3/2.2/gns3_server.conf | cut -d = -f 2)
+fi
 
-# Routed configuration
+if ! systemctl --all --type service | grep -q veth.service; then
 
-sudo tee /etc/systemd/system/veth.service >/dev/null <<EOF
+    echo "Installing veth.service"
+    # Routed configuration
+
+    tee /etc/systemd/system/veth.service >/dev/null <<EOF
 [Unit]
 Description=Configure virtual ethernet for GNS3
 After=network.target
@@ -109,41 +135,68 @@ ExecStart=/sbin/ethtool -K veth-host tx off
 WantedBy=multi-user.target
 EOF
 
-sudo systemctl enable veth
-sudo systemctl start veth
+    systemctl enable veth
+    systemctl start veth
+else
+    echo "service 'veth' already exists"
+fi
+    # You should now be able to `ping 192.168.8.1`
+if ! dpkg -s isc-dhcp-server >/dev/null 2>&1; then
+    apt $APT_OPTS install isc-dhcp-server
 
-# You should now be able to `ping 192.168.8.1`
-
-# sudo apt install isc-dhcp-server
-
-sudo tee -a /etc/dhcp/dhcpd.conf >/dev/null <<EOF
+    tee -a /etc/dhcp/dhcpd.conf >/dev/null <<EOF
       subnet $ZERO_HOST netmask 255.255.255.0 {
         range $FIRST_DHCP $LAST_DHCP;
         option routers $FIRST_HOST;
       }
 EOF
 
-# Also in `/etc/dhcp/dhcpd.conf`, set `domain-name-servers` to your local DNS servers.
-# They can be found by looking at the output of `resolvectl`.
-# This would ideally be done automatically
-# You may also want to set `domain-name` in that same file to your local DNS name.
+    # Also in `/etc/dhcp/dhcpd.conf`, set `domain-name-servers` to your local DNS servers.
+    # They can be found by looking at the output of `resolvectl`.
+    # This would ideally be done automatically
+    # You may also want to set `domain-name` in that same file to your local DNS name.
 
-sudo systemctl enable isc-dhcp-server
-sudo systemctl start isc-dhcp-server
+    systemctl enable isc-dhcp-server
+    systemctl start isc-dhcp-server
+else
+    echo "package 'isc-dhcp-server' already installed"
+fi
 
-# Modify `/etc/sysctl.conf` to enable packet forwarding:
-sudo sed -i /net.ipv4.ip_forward=1/s/^#// /etc/sysctl.conf
+# We need packet forwarding turned on, otherwise the virtual machines
+# won't be able to access the Internet.
 
-# If you want to access the virtual network devices from other machines,
-# you'll need to adjust your network configuration to route traffic for the virtual subnet to the machine.
+if grep -q '#net.ipv4.ip_forward=1' /etc/sysctl.conf; then
+    echo "Modifing `/etc/sysctl.conf` to enable packet forwarding"
+    sed -i /net.ipv4.ip_forward=1/s/^#// /etc/sysctl.conf
+    echo "Enabling packet forwarding for current boot"
+    sysctl net.ipv4.ip_forward=1
+else
+    echo "IPv4 packet forwarding already enabled"
+fi
+
+# If you want to access the GNS3 devices from other machines, you'll
+# need to adjust your network configuration to route traffic for the
+# virtual subnet to the machine.
 #
-# Otherwise, we'll use NAT.
+# Otherwise, only the local machine will have access to the GNS3
+# subnet, so configure NAT to give Internet access to the GNS3
+# devices.
 
-# NAT
-sudo iptables -t nat -A POSTROUTING -s $SUBNET -j MASQUERADE
+CONFIGURE_NAT=false
 
-# This makes the NAT setting persist over reboots
-sudo -E dpkg-reconfigure iptables-persistent
+if $CONFIGURE_NAT; then
+    if iptables -t nat -L POSTROUTING -n | grep MASQUERADE | grep $SUBNET > /dev/null; then
+	echo "NAT already configured for $SUBNET"
+    else
+	iptables -t nat -A POSTROUTING -s $SUBNET -j MASQUERADE
+	# This makes the NAT setting persist over reboots, but it only
+	# works if iptables-persistent is installed.
+	if dpkg -s iptables-persistent >/dev/null 2>&1; then
+	    dpkg-reconfigure iptables-persistent
+	fi
+    fi
+fi
 
+echo
 echo GNS3 user = gns3
 echo GNS3 password = $GNS3_PASSWORD
