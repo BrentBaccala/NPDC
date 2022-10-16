@@ -355,7 +355,10 @@ class Project:
 
     def depends_on(self, node1, node2):
         print('depending', node1['name'], 'on', node2['name'])
-        self.node_dependencies[node1['node_id']] = (node2,)
+        if node1['node_id'] not in self.node_dependencies:
+            self.node_dependencies[node1['node_id']] = [node2]
+        else:
+            self.node_dependencies[node1['node_id']].append(node2)
 
     ### Start nodes running
     ###
