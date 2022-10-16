@@ -68,6 +68,8 @@ class StreamingIteratorWithProgressBar(StreamingIterator):
 if args.filename:
     with open(args.filename, 'rb') as f:
         print("uploading", args.filename)
+        if not ProgressBar:
+            print("clint package not available; no progress bar will be displayed")
         url = "{}/compute/qemu/images/{}".format(gns3_server.url, os.path.basename(args.filename))
         size = os.stat(args.filename).st_size
         with StreamingIteratorWithProgressBar(size, f) as streamer:
