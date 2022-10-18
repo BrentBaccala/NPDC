@@ -25,6 +25,7 @@
 # Can't currently handle anything but a /24, due to 255.255.255.0 later in the script
 # maybe shell tools prips or ipcalc
 
+DOMAIN=test
 SUBNET="${SUBNET:-192.168.8.0/24}"
 
 MASKLEN=$(echo $SUBNET | cut -d / -f 2)
@@ -148,6 +149,8 @@ ExecStart=/sbin/ip link set dev veth up
 ExecStart=/sbin/ip link set dev veth-host up
 ExecStart=/sbin/ip addr add $FIRST_HOST/$MASKLEN broadcast $BROADCAST dev veth-host
 ExecStart=/sbin/ethtool -K veth-host tx off
+ExecStart=resolvectl dns veth-host $FIRST_HOST
+ExecStart=resolvectl domain veth-host $DOMAIN
 
 [Install]
 WantedBy=multi-user.target
@@ -159,16 +162,28 @@ else
     echo "service 'veth' already exists"
 fi
 
-if ! dpkg -s dnsmasq >/dev/null 2>&1; then
-
+if [ ! -r /etc/dnsmasq.d/gns3 ]; then
     mkdir -p /etc/dnsmasq.d
     tee -a /etc/dnsmasq.d/gns3 >/dev/null <<EOF
 listen-address=$FIRST_HOST
 # Only bind to $FIRST_HOST for DNS service
 bind-interfaces
 dhcp-range=$FIRST_DHCP,$LAST_DHCP,12h
+# Register new DHCP hosts into DNS under DOMAIN
+domain=$DOMAIN
+# Make DNS server authoritative for domain to avoid timeouts
+# See https://unix.stackexchange.com/questions/720570
+auth-zone=$DOMAIN
+auth-zone=in-addr.arpa
+# auth-server is required when auth-zone is defined; use a non-existent dummy server
+auth-server=dns.$DOMAIN
 EOF
 
+else
+    echo "'/etc/dnsmasq.d/gns3' already exists"
+fi
+
+if ! dpkg -s dnsmasq >/dev/null 2>&1; then
     apt $APT_OPTS install dnsmasq
     systemctl enable dnsmasq
     systemctl start dnsmasq
