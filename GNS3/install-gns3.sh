@@ -45,6 +45,22 @@ fi
 # https://stackoverflow.com/questions/32145643/how-to-use-ctrlc-to-stop-whole-script-not-just-current-command
 trap "echo; exit" INT
 
+if [ "$1" = "remove-service" ]; then
+    echo "Removing veth.service"
+    systemctl disable veth
+    systemctl stop veth
+    rm /etc/systemd/system/veth.service
+    exit 0
+fi
+
+if [ "$1" = "remove-dnsmasq" ]; then
+    # to remove dnsmasq, "apt purge dnsmasq" does not remove /etc/dnsmasq.d;
+    # other system packages, like 'ubuntu-fan', put files in /etc/dnsmasq.d
+    echo "Removing /etc/dnsmasq.d/gns3"
+    rm /etc/dnsmasq.d/gns3
+    exit 0
+fi
+
 if ! dpkg -s gns3-server >/dev/null 2>&1; then
     if find /etc/apt/ -name *.list | xargs cat | grep -v '^#' | grep gns3/ppa >/dev/null; then
 	echo "PPA 'gns3' already added"
