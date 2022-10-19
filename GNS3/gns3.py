@@ -221,6 +221,7 @@ class Project:
         self.auth = server.auth
         self.verbose = server.verbose
         self.cached_nodes = None
+        self.nodes_waiting_to_start = []
 
         # Bind to a local TCP port that will listen for callbacks.
         #
@@ -380,10 +381,19 @@ class Project:
         result = requests.post(project_start_url, auth=self.auth)
         result.raise_for_status()
 
+        nodes_by_node_id = {node['node_id']:node for node in existing_nodes}
+        node = nodes_by_node_id[nodeid]
+        if node in self.nodes_waiting_to_start:
+            self.nodes_waiting_to_start.remove(node)
+
     def start_node(self, node):
         self.start_nodeid(node['node_id'])
 
     def start_nodes(self, *node_list):
+
+        # default is all nodes that we've created and are waiting to start
+        if not node_list:
+            node_list = self.nodes_waiting_to_start
 
         # node_list can be either names or node dictionaries
         node_names_to_start = [node['name'] if type(node) == dict else node for node in node_list]
@@ -769,7 +779,9 @@ class Project:
         for node in self.cached_nodes:
             if node['name'] == name:
                 return node
-        return self.create_ubuntu_node(user_data, *args, **kwargs)
+        node = self.create_ubuntu_node(user_data, *args, **kwargs)
+        self.nodes_waiting_to_start.append(node)
+        return node
 
     def cloud(self, name, *args, **kwargs):
         if not self.cached_nodes:
