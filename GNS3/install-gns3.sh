@@ -5,8 +5,27 @@
 # drives in /home/gns3.  A virtual network interface called 'veth'
 # will also be created, suitable for use by gns3 cloud nodes, with the
 # bare metal machine running this script configured as a DHCP server
-# and NAT gateway.  The gns3 PPA is added as an apt repository, and
-# necessary packages are installed.
+# and NAT gateway.  Specifically, the script does the following:
+#
+#    - enables the gns3 PPA, if needed
+#    - installs 'gns3-server', if it isn't installed already,
+#      along with several subsidiary packages
+#    - creates a 'gns3' user, if one doesn't already exist
+#       - adds new user to groups needed to run gns3server
+#       - enables user systemd services for new user
+#       - installs a user systemd service to run gns3server
+#       - picks a random password and sets up gns3 authentication
+#    - installs a system service, it it doesn't already exist
+#      to bring up a virtual link, usable by gns3 devices,
+#      and assigns a static IP address range to it
+#    - creates a 'dnsmasq' configuration file to provide
+#      DHCP and DNS service on the virtual link
+#    - installs the 'dnsmasq' package if it isn't installed
+#    - turns on IPv4 packet forwarding, if necessary
+#    - creates a bird configuration file, if one doesn't exist,
+#      that listen on the virtual interface for OSPF
+#      routing annoucements
+#    - installs the 'bird' package, if it isn't installed
 #
 # The default subnet is 192.168.8.0/24, but this can be overridden
 # by setting the SUBNET environment variable.
@@ -59,7 +78,41 @@ if [ "$1" = "remove-dnsmasq" ]; then
     # other system packages, like 'ubuntu-fan', put files in /etc/dnsmasq.d
     echo "Removing /etc/dnsmasq.d/gns3"
     rm /etc/dnsmasq.d/gns3
+    echo "Run 'apt remove dnsmasq' to remove the package"
     exit 0
+fi
+
+if [ "$1" = "purge-bird" ]; then
+    # to remove dnsmasq, "apt purge dnsmasq" does not remove /etc/dnsmasq.d;
+    # other system packages, like 'ubuntu-fan', put files in /etc/dnsmasq.d
+    echo "Removing /etc/dnsmasq.d/gns3"
+    rm /etc/dnsmasq.d/gns3
+    echo "Run 'apt remove dnsmasq' to remove the package"
+    exit 0
+fi
+
+# If you want to access the GNS3 devices from other machines, you'll
+# need to adjust your network configuration to route traffic for the
+# virtual subnet to the machine.
+#
+# Otherwise, call the script with 'enable-nat', and it will configure
+# NAT so that the GNS3 devices will have Internet access, but only the
+# local machine will have access to the GNS3 subnet.
+
+if [ "$1" = "enable-nat" ]; then
+    if iptables -t nat -L POSTROUTING -n | grep MASQUERADE | grep $SUBNET > /dev/null; then
+	echo "NAT already configured for $SUBNET"
+    else
+	iptables -t nat -A POSTROUTING -s $SUBNET -j MASQUERADE
+	# This makes the NAT setting persist over reboots, but it only
+	# works if iptables-persistent is installed.
+	#
+	# iptables-persistent seems a significant enough change to the
+	# system that I don't do it automatically.
+	if dpkg -s iptables-persistent >/dev/null 2>&1; then
+	    dpkg-reconfigure iptables-persistent
+	fi
+    fi
 fi
 
 if ! dpkg -s gns3-server >/dev/null 2>&1; then
@@ -205,27 +258,53 @@ else
     echo "IPv4 packet forwarding already enabled"
 fi
 
-# If you want to access the GNS3 devices from other machines, you'll
-# need to adjust your network configuration to route traffic for the
-# virtual subnet to the machine.
+# It's useful to configure a minimial OSPF routing environment, to
+# allow devices in the virtual network to advertise routes to the bare
+# metal machine.
+
+if [ ! -r /etc/bird/bird.conf ]; then
+    mkdir -p /etc/bird
+    tee -a /etc/bird/bird.conf >/dev/null <<EOF
+# This is a minimalist bird configuration that listens for OSPF annoucements
+# on the virtual link used by GNS3 virtual networks.
 #
-# Otherwise, only the local machine will have access to the GNS3
-# subnet, so configure NAT to give Internet access to the GNS3
-# devices.
+# The Device protocol is not a real routing protocol. It doesn't generate any
+# routes and it only serves as a module for getting information about network
+# interfaces from the kernel.
 
-CONFIGURE_NAT=false
+protocol device {
+}
 
-if $CONFIGURE_NAT; then
-    if iptables -t nat -L POSTROUTING -n | grep MASQUERADE | grep $SUBNET > /dev/null; then
-	echo "NAT already configured for $SUBNET"
-    else
-	iptables -t nat -A POSTROUTING -s $SUBNET -j MASQUERADE
-	# This makes the NAT setting persist over reboots, but it only
-	# works if iptables-persistent is installed.
-	if dpkg -s iptables-persistent >/dev/null 2>&1; then
-	    dpkg-reconfigure iptables-persistent
-	fi
-    fi
+# The Kernel protocol is not a real routing protocol. Instead of communicating
+# with other routers in the network, it performs synchronization of BIRD's
+# routing tables with the OS kernel.
+protocol kernel {
+	metric 64;	# Use explicit kernel route metric to avoid collisions
+			# with non-BIRD routes in the kernel routing table
+	import none;
+	export all;	# Actually insert routes into the kernel routing table
+}
+
+protocol ospf OSPF {
+	area 0.0.0.0 {
+		interface "veth-host" {
+			  cost 10;
+		};
+	};
+	import all;
+	export none;
+}
+EOF
+else
+    echo "'/etc/bird/bird.conf' already exists"
+fi
+
+if ! dpkg -s bird >/dev/null 2>&1; then
+    # noniteractive, because we've set a non-standard configuration file,
+    # and otherwise it will prompt us if we want to keep the "old" version
+    DEBIAN_FRONTEND=noninteractive apt $APT_OPTS install bird
+else
+    echo "package 'bird' already installed"
 fi
 
 echo
