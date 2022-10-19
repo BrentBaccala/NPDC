@@ -103,6 +103,7 @@ if [ "$1" = "enable-nat" ]; then
     if iptables -t nat -L POSTROUTING -n | grep MASQUERADE | grep $SUBNET > /dev/null; then
 	echo "NAT already configured for $SUBNET"
     else
+	echo "Enabling NAT"
 	iptables -t nat -A POSTROUTING -s $SUBNET -j MASQUERADE
 	# This makes the NAT setting persist over reboots, but it only
 	# works if iptables-persistent is installed.
@@ -112,6 +113,23 @@ if [ "$1" = "enable-nat" ]; then
 	if dpkg -s iptables-persistent >/dev/null 2>&1; then
 	    dpkg-reconfigure iptables-persistent
 	fi
+    fi
+fi
+
+if [ "$1" = "disable-nat" ]; then
+    if iptables -t nat -L POSTROUTING -n | grep MASQUERADE | grep $SUBNET > /dev/null; then
+	echo "Disabling NAT"
+	iptables -t nat -D POSTROUTING -s $SUBNET -j MASQUERADE
+	# This makes the NAT setting persist over reboots, but it only
+	# works if iptables-persistent is installed.
+	#
+	# iptables-persistent seems a significant enough change to the
+	# system that I don't do it automatically.
+	if dpkg -s iptables-persistent >/dev/null 2>&1; then
+	    dpkg-reconfigure iptables-persistent
+	fi
+    else
+	echo "NAT not configured for $SUBNET"
     fi
 fi
 
