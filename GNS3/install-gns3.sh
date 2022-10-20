@@ -27,6 +27,17 @@
 #      routing annoucements
 #    - installs the 'bird' package, if it isn't installed
 #
+# There's also some options you can give as the first argument:
+#
+# remove-service: removes the virtual link (veth) service
+# remove-dnsmasq: removes the dnsmasq.d/gns3 file
+#                 to remove dnsmasq completely, 'apt remove dnsmasq'
+#                 to remove bird, run 'apt purge bird'
+# enable-nat:     adds NAT rule
+# disable-nat:    removes NAT rule
+#                 both NAT commands save the iptables rules over
+#                 reboots, if iptables-persistent is installed
+#
 # The default subnet is 192.168.8.0/24, but this can be overridden
 # by setting the SUBNET environment variable.
 #
@@ -74,15 +85,6 @@ if [ "$1" = "remove-service" ]; then
 fi
 
 if [ "$1" = "remove-dnsmasq" ]; then
-    # to remove dnsmasq, "apt purge dnsmasq" does not remove /etc/dnsmasq.d;
-    # other system packages, like 'ubuntu-fan', put files in /etc/dnsmasq.d
-    echo "Removing /etc/dnsmasq.d/gns3"
-    rm /etc/dnsmasq.d/gns3
-    echo "Run 'apt remove dnsmasq' to remove the package"
-    exit 0
-fi
-
-if [ "$1" = "purge-bird" ]; then
     # to remove dnsmasq, "apt purge dnsmasq" does not remove /etc/dnsmasq.d;
     # other system packages, like 'ubuntu-fan', put files in /etc/dnsmasq.d
     echo "Removing /etc/dnsmasq.d/gns3"
@@ -233,13 +235,17 @@ else
     echo "service 'veth' already exists"
 fi
 
+# DHCP server: 2 minute timeout on leases because I'm tearing down and
+# rebulding the virtual network so often
+
 if [ ! -r /etc/dnsmasq.d/gns3 ]; then
+    DNSMASQ_CONFIG_FILE=installed
     mkdir -p /etc/dnsmasq.d
     tee -a /etc/dnsmasq.d/gns3 >/dev/null <<EOF
 listen-address=$FIRST_HOST
 # Only bind to $FIRST_HOST for DNS service
 bind-interfaces
-dhcp-range=$FIRST_DHCP,$LAST_DHCP,12h
+dhcp-range=$FIRST_DHCP,$LAST_DHCP,2m
 # Register new DHCP hosts into DNS under DOMAIN
 domain=$DOMAIN
 # Make DNS server authoritative for domain to avoid timeouts
@@ -251,6 +257,7 @@ auth-server=dns.$DOMAIN
 EOF
 
 else
+    DNSMASQ_CONFIG_FILE=exists
     echo "'/etc/dnsmasq.d/gns3' already exists"
 fi
 
@@ -262,6 +269,10 @@ if ! dpkg -s dnsmasq >/dev/null 2>&1; then
     # sudo resolvectl dns veth-host 192.168.8.1
 else
     echo "package 'dnsmasq' already installed"
+    if [ $DNSMASQ_CONFIG_FILE = installed ]; then
+       echo "restarting 'dnsmasq' service"
+       systemctl restart dnsmasq
+    fi
 fi
 
 # We need packet forwarding turned on, otherwise the virtual machines
