@@ -389,9 +389,17 @@ class Project:
     def start_node(self, node):
         self.start_nodeid(node['node_id'])
 
-    def start_nodes(self, *node_list):
+    def start_nodes(self, *node_list, wait_for_everything=False):
+        """start_nodes(*node_list, wait_for_everything=False)
+        default node_list is all nodes we've created this session
+        wait_for_everything, if True, will wait for all of them to start,
+        otherwise we'll only wait for the ones that others depend on
 
-        # default is all nodes that we've created and are waiting to start
+        For example, if a server depends on a gateway, we wait for the gateway
+        to boot, then start the server, but return without waiting for the server
+        to finish booting, unless wait_for_everything is True.
+        """
+
         if not node_list:
             node_list = self.nodes_waiting_to_start
 
@@ -431,16 +439,12 @@ class Project:
                     waiting_for_nodeids_to_start.add(node_id)
 
         with self.httpd.instance_report_cv:
-            # maybe this should be just "while waiting_for_nodeids_to_start:"
-            # the way it's done now, we only keep waiting until all dependent nodes have started
-            # so, for example, if a server depends on a gateway, we wait for the gateway
-            #    to boot, then start the server, but return without waiting for the server
-            #    to finish booting
-            while waiting_for_nodeids_to_start:
-            #while waiting_for_nodeids_to_start.intersection(all_dependent_nodes):
-
-                #print('Waiting for', [names_by_node_id[nodeid] for nodeid in waiting_for_nodeids_to_start.intersection(all_dependent_nodes)])
-                print('Waiting for', [names_by_node_id[nodeid] for nodeid in waiting_for_nodeids_to_start])
+            if wait_for_everything:
+                waitlist = waiting_for_nodeids_to_start
+            else:
+                waitlist = waiting_for_nodeids_to_start.intersection(all_dependent_nodes):
+            while waitlist:
+                print('Waiting for', [names_by_node_id[nodeid] for nodeid in waitlist])
                 self.httpd.instance_report_cv.wait()
 
                 running_nodeids.update(node_ids_by_name[inst] for inst in self.httpd.instances_reported)
