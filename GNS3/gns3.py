@@ -442,7 +442,7 @@ class Project:
             if wait_for_everything:
                 waitlist = waiting_for_nodeids_to_start
             else:
-                waitlist = waiting_for_nodeids_to_start.intersection(all_dependent_nodes):
+                waitlist = waiting_for_nodeids_to_start.intersection(all_dependent_nodes)
             while waitlist:
                 print('Waiting for', [names_by_node_id[nodeid] for nodeid in waitlist])
                 self.httpd.instance_report_cv.wait()
