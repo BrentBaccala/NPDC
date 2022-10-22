@@ -4,6 +4,9 @@
 on the gns3 packages, since otherwise an apt upgrade on my laptop requires both an apt upgrade on my
 gns3 server *and* restarting the gns3 server, which implies stopping and restarting all of the running VMs.
 
+**Note**: gns3 uses qemu, which can not run concurrently with VirtualBox.  If VirtualBox virtual machines
+are running. gns3 virtual machines will not start, and vice versa.
+
 ## Setup
 
 1. gns3 is not in the standard Ubuntu distribution, but the gns3 team maintains an Ubuntu Personal Package Archive (PPA).
