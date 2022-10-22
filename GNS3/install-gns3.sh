@@ -38,6 +38,15 @@
 #                 both NAT commands save the iptables rules over
 #                 reboots, if iptables-persistent is installed
 #
+# To completely undo what this script does, do the following (as root):
+#    - su gns3 -c "env XDG_RUNTIME_DIR=/run/user/$(id -u gns3) systemctl --user stop gns3"
+#    - deluser --remove-home gns3
+#    - ./install-gns3.sh remove-service
+#    - ./install-gns3.sh remove-dnsmasq
+#    - apt remove dnsmasq
+#    - apt purge bird
+#    - ./install-gns3.sh disable-nat
+#
 # The default subnet is 192.168.8.0/24, but this can be overridden
 # by setting the SUBNET environment variable.
 #

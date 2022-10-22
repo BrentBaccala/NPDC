@@ -42,10 +42,10 @@ are running. gns3 virtual machines will not start, and vice versa.
 
 1. Upload to the gns3 server using `upload-image.py`:
 
-   `./upload-image.py ubuntu-20.04-server-cloudimg-amd64.img`
-
-   The most uncommon Python3 package that this script uses is `python3-requests-toolbelt`.
-   You may need to install it with apt.
+   ```
+   sudo apt install python3-requests-toolbelt python3-clint
+   ./upload-image.py ubuntu-20.04-server-cloudimg-amd64.img
+   ```
 
    If this step works, then you have REST API access to the GNS3 server.
 
