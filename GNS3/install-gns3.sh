@@ -244,6 +244,113 @@ else
     echo "service 'veth' already exists"
 fi
 
+# DNS server
+#
+#
+# It's configured to resolve everything except $DOMAIN by passing the
+# query on to resolved listening on 127.0.0.53, but resolved seems
+# return NOTIMP errors unless I turned on EDNS, and then I get
+# complaints from bind about "broken trust chain", so I turned off
+# dnssec validation.
+
+if [ ! -r /etc/bind/named.conf.options ]; then
+    mkdir -p /etc/bind
+    tee -a /etc/bind/named.conf.options >/dev/null <<EOF
+options {
+	directory "/var/cache/bind";
+
+	forward only;
+	forwarders { 127.0.0.53; };
+
+	dnssec-enable no;
+	dnssec-validation no;
+
+	listen-on { $FIRST_HOST; };
+	listen-on-v6 { none; };
+};
+
+server 127.0.0.53 {
+	edns no;
+};
+EOF
+else
+    echo "/etc/bind/named.conf.options already exists"
+fi
+
+if [ ! -r /etc/bind/named.conf.local ]; then
+    mkdir -p /etc/bind
+    tee -a /etc/bind/named.conf.local >/dev/null <<EOF
+include "/etc/bind/rndc.key";
+
+zone "$DOMAIN" {
+	type master;
+	file "/var/lib/bind/$DOMAIN.zone";
+	allow-update { key rndc-key; };
+};
+EOF
+else
+    echo "/etc/bind/named.conf.local already exists"
+fi
+
+if [ ! -r /var/lib/bind/$DOMAIN.zone ]; then
+    mkdir -p /var/lib/bind
+    tee -a /var/lib/bind/$DOMAIN.zone >/dev/null <<EOF
+\$ORIGIN $DOMAIN.
+\$TTL 604800 ; 1 week
+@ IN SOA ddns.$DOMAIN. dnsadmin.$DOMAIN. (
+   2018021364 ; serial
+   28800   ; refresh (8 hours)
+   3600    ; retry (1 hour)
+   302400   ; expire (3 days 12 hours)
+   43200   ; minimum (12 hours)
+   )
+   NS ddns.$DOMAIN.
+ddns  A $FIRST_HOST
+EOF
+else
+    echo "/var/lib/bind/$DOMAIN.zone already exists"
+fi
+
+# DHCP server - lease time 1 min
+
+# cp /etc/bind/rndc.key /etc/dhcp
+# chown dhcpd.dhcpd /etc/dhcp/rndc.key (doesn't work; use mod 644)
+# sudo chown bind.bind /var/lib/bind/test.zone
+
+if [ ! -r /etc/dhcp/dhcpd.conf ]; then
+    mkdir -p /etc/dhcp
+    tee -a /etc/dhcp/dhcpd.conf >/dev/null <<EOF
+ddns-updates on;
+ddns-update-style standard;
+update-optimization off;
+authoritative;
+
+include "/etc/dhcp/rndc.key";
+
+allow unknown-clients;
+default-lease-time 60;
+max-lease-time 28800;
+log-facility local7;
+
+zone $DOMAIN. {
+ primary $FIRST_HOST;
+ key rndc-key;
+}
+
+subnet $ZERO_HOST netmask 255.255.255.0 {
+ range $FIRST_DHCP $LAST_DHCP;
+ option subnet-mask 255.255.255.0;
+ option domain-name-servers $FIRST_HOST;
+ option domain-name "$DOMAIN";
+ option routers $FIRST_HOST;
+ option broadcast-address $BROADCAST;
+}
+EOF
+else
+    echo "/etc/dhcp/dhcpd.conf already exists"
+fi
+
+
 # DHCP server: 2 minute timeout on leases because I'm tearing down and
 # rebulding the virtual network so often
 
