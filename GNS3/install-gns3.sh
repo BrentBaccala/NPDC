@@ -246,10 +246,9 @@ fi
 
 # DNS server
 #
-#
 # It's configured to resolve everything except $DOMAIN by passing the
 # query on to resolved listening on 127.0.0.53, but resolved seems
-# return NOTIMP errors unless I turned on EDNS, and then I get
+# return NOTIMP errors unless I turned off EDNS, and then I get
 # complaints from bind about "broken trust chain", so I turned off
 # dnssec validation.
 
@@ -280,12 +279,10 @@ fi
 if [ ! -r /etc/bind/named.conf.local ]; then
     mkdir -p /etc/bind
     tee -a /etc/bind/named.conf.local >/dev/null <<EOF
-include "/etc/bind/rndc.key";
-
 zone "$DOMAIN" {
 	type master;
 	file "/var/lib/bind/$DOMAIN.zone";
-	allow-update { key rndc-key; };
+	allow-update { $SUBNET; };
 };
 EOF
 else
@@ -297,25 +294,24 @@ if [ ! -r /var/lib/bind/$DOMAIN.zone ]; then
     tee -a /var/lib/bind/$DOMAIN.zone >/dev/null <<EOF
 \$ORIGIN $DOMAIN.
 \$TTL 604800 ; 1 week
-@ IN SOA ddns.$DOMAIN. dnsadmin.$DOMAIN. (
+@ IN SOA ns.$DOMAIN. dnsadmin.$DOMAIN. (
    2018021364 ; serial
    28800   ; refresh (8 hours)
    3600    ; retry (1 hour)
    302400   ; expire (3 days 12 hours)
    43200   ; minimum (12 hours)
    )
-   NS ddns.$DOMAIN.
-ddns  A $FIRST_HOST
+   NS ns.$DOMAIN.
+ns  A $FIRST_HOST
 EOF
+    # XXX - bind has to already be installed for this to work
+    chown bind.bind /var/lib/bind/$DOMAIN.zone
 else
     echo "/var/lib/bind/$DOMAIN.zone already exists"
 fi
 
-# DHCP server - lease time 1 min
-
-# cp /etc/bind/rndc.key /etc/dhcp
-# chown dhcpd.dhcpd /etc/dhcp/rndc.key (doesn't work; use mod 644)
-# sudo chown bind.bind /var/lib/bind/test.zone
+# DHCP server: 1 minute lease time because I'm tearing down and
+# rebulding the virtual network so often
 
 if [ ! -r /etc/dhcp/dhcpd.conf ]; then
     mkdir -p /etc/dhcp
@@ -325,17 +321,12 @@ ddns-update-style standard;
 update-optimization off;
 authoritative;
 
-include "/etc/dhcp/rndc.key";
-
 allow unknown-clients;
-default-lease-time 60;
-max-lease-time 28800;
+default-lease-time 10;
+max-lease-time 10;
 log-facility local7;
 
-zone $DOMAIN. {
- primary $FIRST_HOST;
- key rndc-key;
-}
+zone $DOMAIN. { }
 
 subnet $ZERO_HOST netmask 255.255.255.0 {
  range $FIRST_DHCP $LAST_DHCP;
@@ -350,32 +341,7 @@ else
     echo "/etc/dhcp/dhcpd.conf already exists"
 fi
 
-
-# DHCP server: 2 minute timeout on leases because I'm tearing down and
-# rebulding the virtual network so often
-
-if [ ! -r /etc/dnsmasq.d/gns3 ]; then
-    DNSMASQ_CONFIG_FILE=installed
-    mkdir -p /etc/dnsmasq.d
-    tee -a /etc/dnsmasq.d/gns3 >/dev/null <<EOF
-listen-address=$FIRST_HOST
-# Only bind to $FIRST_HOST for DNS service
-bind-interfaces
-dhcp-range=$FIRST_DHCP,$LAST_DHCP,2m
-# Register new DHCP hosts into DNS under DOMAIN
-domain=$DOMAIN
-# Make DNS server authoritative for domain to avoid timeouts
-# See https://unix.stackexchange.com/questions/720570
-auth-zone=$DOMAIN
-auth-zone=in-addr.arpa
-# auth-server is required when auth-zone is defined; use a non-existent dummy server
-auth-server=dns.$DOMAIN
-EOF
-
-else
-    DNSMASQ_CONFIG_FILE=exists
-    echo "'/etc/dnsmasq.d/gns3' already exists"
-fi
+# XXX change this to isc bind/dhcpd
 
 if ! dpkg -s dnsmasq >/dev/null 2>&1; then
     apt $APT_OPTS install dnsmasq
