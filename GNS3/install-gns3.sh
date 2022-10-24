@@ -31,6 +31,11 @@
 #      routing annoucements
 #    - installs the 'bird' package, if it isn't installed
 #
+# There are two important environment variables you can set:
+#
+# SUBNET           virtual link's subnet (default 192.168.8.0/24)
+# DOMAIN           virtual link's DNS domain (default "test")
+#
 # There's also some options you can give as the first argument:
 #
 # remove-service: removes the virtual link (veth) service
@@ -43,28 +48,12 @@
 #    - su gns3 -c "env XDG_RUNTIME_DIR=/run/user/$(id -u gns3) systemctl --user stop gns3"
 #    - deluser --remove-home gns3
 #    - ./install-gns3.sh remove-service
-#    - apt purge bind9 isc-dhcp-server bird
+#    - apt purge gns3-server dynamips makepasswd genisoimage bind9 isc-dhcp-server bird
 #    - ./install-gns3.sh disable-nat
-#
-# The default subnet is 192.168.8.0/24, but this can be overridden
-# by setting the SUBNET environment variable.
+#    - add-apt-repository --remove ppa:gns3
 
-# This is where I'd really like to use Python
-# Can't currently handle anything but a /24, due to 255.255.255.0 later in the script
-# maybe shell tools prips or ipcalc
-
-DOMAIN=test
+DOMAIN="${DOMAIN:-test}"
 SUBNET="${SUBNET:-192.168.8.0/24}"
-
-MASKLEN=$(echo $SUBNET | cut -d / -f 2)
-
-SUBNET_PREFIX=$(echo $SUBNET | cut -d . -f 1-3)
-
-ZERO_HOST=$SUBNET_PREFIX.0
-FIRST_HOST=$SUBNET_PREFIX.1
-BROADCAST=$SUBNET_PREFIX.255
-FIRST_DHCP=$SUBNET_PREFIX.129
-LAST_DHCP=$SUBNET_PREFIX.199
 
 if [ $EUID != 0 ]; then
     echo "You must run this command as root."
@@ -104,6 +93,20 @@ function need_pkg() {
 	echo "package '$1' already installed"
     fi
 }
+
+# This is where I'd really like to use Python
+# Can't currently handle anything but a /24, due to 255.255.255.0 later in the script
+# maybe shell tools prips or ipcalc
+
+MASKLEN=$(echo $SUBNET | cut -d / -f 2)
+
+SUBNET_PREFIX=$(echo $SUBNET | cut -d . -f 1-3)
+
+ZERO_HOST=$SUBNET_PREFIX.0
+FIRST_HOST=$SUBNET_PREFIX.1
+BROADCAST=$SUBNET_PREFIX.255
+FIRST_DHCP=$SUBNET_PREFIX.129
+LAST_DHCP=$SUBNET_PREFIX.199
 
 if [ "$1" = "remove-service" ]; then
     echo "Removing veth.service"
