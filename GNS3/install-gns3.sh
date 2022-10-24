@@ -48,16 +48,6 @@
 #
 # The default subnet is 192.168.8.0/24, but this can be overridden
 # by setting the SUBNET environment variable.
-#
-# The script will prompt interactively several times:
-#    - to confirm adding the repository
-#    - to confirm installing the packages
-#    - to ask if non-superusers should be able to run gns3 (say yes)
-#
-# Environment variables can be used to silence these prompts:
-#
-# APT_OPTS=-y will stop prompts #1 and #2
-# DEBIAN_FRONTEND=noninteractive will stop prompt #3
 
 # This is where I'd really like to use Python
 # Can't currently handle anything but a /24, due to 255.255.255.0 later in the script
@@ -83,6 +73,37 @@ fi
 
 # https://stackoverflow.com/questions/32145643/how-to-use-ctrlc-to-stop-whole-script-not-just-current-command
 trap "echo; exit" INT
+
+function need_ppa() {
+    if find /etc/apt/ -name *.list | xargs cat | grep -v '^#' | grep $1/ppa >/dev/null; then
+	echo "PPA '$1' already added"
+    else
+	add-apt-repository -y ppa:$1
+    fi
+}
+
+function need_pkg() {
+    if ! dpkg -s $1 >/dev/null 2>&1; then
+	# --no-install-recommends, because gns3-server depends on
+	# xvnc and a big chuck of X11 stuff, that we don't need for a
+	# server.
+	#
+	# noniteractive, because we've set a non-standard configuration file,
+	# and otherwise it will prompt us if we want to keep the "old" version
+	#
+	# setting noniteractive also silences a question about whether non-root
+	# users should be allowed to run gns3, and takes the default "yes"
+	#
+	# --force-confold because this script sets its custom configurations
+	# by checking to see if the configuration files are present, leaving
+	# them alone if they're not, otherwise creating them, then installing
+	# the package.  So we want to keep our "old" configuration files, i.e,
+	# the ones we just created, instead of the ones in the package.
+	DEBIAN_FRONTEND=noninteractive apt -y -o Dpkg::Options::="--force-confold" install --no-install-recommends $1
+    else
+	echo "package '$1' already installed"
+    fi
+}
 
 if [ "$1" = "remove-service" ]; then
     echo "Removing veth.service"
@@ -115,6 +136,7 @@ if [ "$1" = "enable-nat" ]; then
 	    dpkg-reconfigure iptables-persistent
 	fi
     fi
+    exit 0
 fi
 
 if [ "$1" = "disable-nat" ]; then
@@ -132,22 +154,15 @@ if [ "$1" = "disable-nat" ]; then
     else
 	echo "NAT not configured for $SUBNET"
     fi
+    exit 0
 fi
 
-if ! dpkg -s gns3-server >/dev/null 2>&1; then
-    if find /etc/apt/ -name *.list | xargs cat | grep -v '^#' | grep gns3/ppa >/dev/null; then
-	echo "PPA 'gns3' already added"
-    else
-	add-apt-repository $APT_OPTS ppa:gns3
-    fi
-    # Don't install recommends, because that depends on xvnc and a big
-    # chuck of X11 stuff, that we don't need for a server, but we will
-    # need the recommended package dynamips for the default Ethernet
-    # switch.
-    apt $APT_OPTS install --no-install-recommends gns3-server dynamips makepasswd genisoimage
-else
-    echo "package 'gns3-server' already installed"
-fi
+need_ppa gns3
+
+need_pkg gns3-server
+need_pkg dynamips
+need_pkg makepasswd
+need_pkg genisoimage
 
 # I wondered if this should this be a --system user, but sometimes I
 # want to su to gns3 to stop and restart the gns3server, and system
@@ -299,7 +314,7 @@ if [ ! -r /var/lib/bind/$DOMAIN.zone ]; then
 \$ORIGIN $DOMAIN.
 \$TTL 604800 ; 1 week
 @ IN SOA ns.$DOMAIN. dnsadmin.$DOMAIN. (
-   2018021364 ; serial
+   2022102301 ; serial
    28800   ; refresh (8 hours)
    3600    ; retry (1 hour)
    302400   ; expire (3 days 12 hours)
@@ -308,8 +323,6 @@ if [ ! -r /var/lib/bind/$DOMAIN.zone ]; then
    NS ns.$DOMAIN.
 ns  A $FIRST_HOST
 EOF
-    # XXX - bind has to already be installed for this to work
-    chown bind.bind /var/lib/bind/$DOMAIN.zone
 else
     echo "/var/lib/bind/$DOMAIN.zone already exists"
 fi
@@ -345,19 +358,14 @@ else
     echo "/etc/dhcp/dhcpd.conf already exists"
 fi
 
-# XXX change this to isc bind/dhcpd
+need_pkg bind9
+need_pkg isc-dhcp-server
 
-if ! dpkg -s dnsmasq >/dev/null 2>&1; then
-    apt $APT_OPTS install dnsmasq
-    systemctl enable dnsmasq
-    systemctl start dnsmasq
-else
-    echo "package 'dnsmasq' already installed"
-    if [ $DNSMASQ_CONFIG_FILE = installed ]; then
-       echo "restarting 'dnsmasq' service"
-       systemctl restart dnsmasq
-    fi
-fi
+# We had to wait bind to be installed for this to work, since
+# otherwise we might not have a 'bind' user, and yes, the
+# file needs to be writable by bind to allow dynamic updates.
+
+chown bind.bind /var/lib/bind/$DOMAIN.zone
 
 # We need packet forwarding turned on, otherwise the virtual machines
 # won't be able to access the Internet.
@@ -412,13 +420,7 @@ else
     echo "'/etc/bird/bird.conf' already exists"
 fi
 
-if ! dpkg -s bird >/dev/null 2>&1; then
-    # noniteractive, because we've set a non-standard configuration file,
-    # and otherwise it will prompt us if we want to keep the "old" version
-    DEBIAN_FRONTEND=noninteractive apt $APT_OPTS install bird
-else
-    echo "package 'bird' already installed"
-fi
+need_pkg bird
 
 echo
 echo GNS3 user = gns3
