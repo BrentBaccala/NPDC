@@ -4,8 +4,9 @@
 # gns3server and keeps all of the gns3 configuration and virtual
 # drives in /home/gns3.  A virtual network interface called 'veth'
 # will also be created, suitable for use by gns3 cloud nodes, with the
-# bare metal machine running this script configured as a DHCP server
-# and NAT gateway.  Specifically, the script does the following:
+# bare metal machine running this script configured as a DHCP server,
+# DNS server, OSPF speaker, and NAT gateway.  Specifically, the script
+# does the following:
 #
 #    - enables the gns3 PPA, if needed
 #    - installs 'gns3-server', if it isn't installed already,
@@ -17,10 +18,13 @@
 #       - picks a random password and sets up gns3 authentication
 #    - installs a system service, it it doesn't already exist
 #      to bring up a virtual link, usable by gns3 devices,
-#      and assigns a static IP address range to it
-#    - creates a 'dnsmasq' configuration file to provide
-#      DHCP and DNS service on the virtual link
-#    - installs the 'dnsmasq' package if it isn't installed
+#      and assigns a static private IP address range to it
+#    - installs the 'bind9' package if it isn't installed
+#    - creates the Bind configuration files to provide
+#      DNS service on the virtual link
+#    - installs the 'isc-dhcp-server' package if it isn't installed
+#    - creates the dhcpd.conf configuration file to provide
+#      DHCP service on the virtual link
 #    - turns on IPv4 packet forwarding, if necessary
 #    - creates a bird configuration file, if one doesn't exist,
 #      that listen on the virtual interface for OSPF
@@ -30,9 +34,6 @@
 # There's also some options you can give as the first argument:
 #
 # remove-service: removes the virtual link (veth) service
-# remove-dnsmasq: removes the dnsmasq.d/gns3 file
-#                 to remove dnsmasq completely, 'apt remove dnsmasq'
-#                 to remove bird, run 'apt purge bird'
 # enable-nat:     adds NAT rule
 # disable-nat:    removes NAT rule
 #                 both NAT commands save the iptables rules over
@@ -42,9 +43,7 @@
 #    - su gns3 -c "env XDG_RUNTIME_DIR=/run/user/$(id -u gns3) systemctl --user stop gns3"
 #    - deluser --remove-home gns3
 #    - ./install-gns3.sh remove-service
-#    - ./install-gns3.sh remove-dnsmasq
-#    - apt remove dnsmasq
-#    - apt purge bird
+#    - apt purge bind9 isc-dhcp-server bird
 #    - ./install-gns3.sh disable-nat
 #
 # The default subnet is 192.168.8.0/24, but this can be overridden
@@ -90,15 +89,6 @@ if [ "$1" = "remove-service" ]; then
     systemctl disable veth
     systemctl stop veth
     rm /etc/systemd/system/veth.service
-    exit 0
-fi
-
-if [ "$1" = "remove-dnsmasq" ]; then
-    # to remove dnsmasq, "apt purge dnsmasq" does not remove /etc/dnsmasq.d;
-    # other system packages, like 'ubuntu-fan', put files in /etc/dnsmasq.d
-    echo "Removing /etc/dnsmasq.d/gns3"
-    rm /etc/dnsmasq.d/gns3
-    echo "Run 'apt remove dnsmasq' to remove the package"
     exit 0
 fi
 
@@ -160,7 +150,8 @@ else
 fi
 
 # I wondered if this should this be a --system user, but sometimes I
-# want to su to gns3 to stop and restart the gns3server.
+# want to su to gns3 to stop and restart the gns3server, and system
+# users don't have shells.
 
 if ! id -u gns3 >/dev/null 2>&1; then
     echo "Adding gns3 user"
@@ -247,10 +238,23 @@ fi
 # DNS server
 #
 # It's configured to resolve everything except $DOMAIN by passing the
-# query on to resolved listening on 127.0.0.53, but resolved seems
-# return NOTIMP errors unless I turned off EDNS, and then I get
-# complaints from bind about "broken trust chain", so I turned off
-# dnssec validation.
+# query on to resolved listening on 127.0.0.53, but resolved returned
+# NOTIMP errors until I turned off EDNS, and then I got complaints
+# from bind about "broken trust chain", so I turned off dnssec
+# validation as well.
+#
+# I want to use resolved because it's Ubuntu's standard DNS resolver.
+#
+# The $DOMAIN is configured to accept dynamic DNS updates from
+# $SUBNET, and the DHCP server below will use that feature to inject
+# dynamic hostnames into DNS.  If that's all we wanted, dnsmasq would
+# work fine.  But we also listen for OSPF speakers in the virtual
+# network and let them inject routes into our routing table (see the
+# bird configuration below), so we also want to let those devices
+# inject DNS names as well, and dnsmasq can't do that.
+#
+# There's no strong authentication configured; anything on the virtual
+# network can update $DOMAIN.
 
 if [ ! -r /etc/bind/named.conf.options ]; then
     mkdir -p /etc/bind
@@ -310,7 +314,7 @@ else
     echo "/var/lib/bind/$DOMAIN.zone already exists"
 fi
 
-# DHCP server: 1 minute lease time because I'm tearing down and
+# DHCP server: 10 second lease time because I'm tearing down and
 # rebulding the virtual network so often
 
 if [ ! -r /etc/dhcp/dhcpd.conf ]; then
@@ -347,8 +351,6 @@ if ! dpkg -s dnsmasq >/dev/null 2>&1; then
     apt $APT_OPTS install dnsmasq
     systemctl enable dnsmasq
     systemctl start dnsmasq
-    # Now I'd like to do this, but it isn't working the way I expect
-    # sudo resolvectl dns veth-host 192.168.8.1
 else
     echo "package 'dnsmasq' already installed"
     if [ $DNSMASQ_CONFIG_FILE = installed ]; then
