@@ -251,6 +251,20 @@ EOF
     systemctl start veth
 else
     echo "service 'veth' already exists"
+
+    # The script has already run at least once.  Make sure all the settings are consistent.
+
+    VETH_DOMAIN=$(grep 'resolvectl domain' /etc/systemd/system/veth.service | sed 's/.* //')
+    VETH_SUBNET=$(grep 'ip addr add' /etc/systemd/system/veth.service | sed -E 's|.* ([.0-9]*/[0-9]*).*|\1|')
+
+    if [ "$VETH_DOMAIN" != "$DOMAIN" ]; then
+	echo "DNS domain in veth.service ($VETH_DOMAIN) does not match script's DOMAIN variable ($DOMAIN)"
+	exit 1
+    fi
+    if [ "$VETH_SUBNET" != "$FIRST_HOST/$MASKLEN" ]; then
+	echo "Subnet in veth.service ($VETH_SUBNET) does not match script's SUBNET variable ($SUBNET)"
+	exit 1
+    fi
 fi
 
 # DNS server
