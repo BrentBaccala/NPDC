@@ -36,6 +36,8 @@ parser.add_argument('-m', '--memory', type=int,
                     help='MBs of virtual RAM (default 256)')
 parser.add_argument('--debug', action="store_true",
                     help='allow console login with username ubuntu and password ubuntu')
+parser.add_argument('--wait', action="store_true",
+                    help='wait for node to finish cloud-init before exiting script')
 
 parser._mutually_exclusive_groups[0].add_argument('client_image', metavar='FILENAME', nargs='?',
                     help='client image to test')
@@ -83,7 +85,7 @@ cloud = gns3_project.cloud('Internet', args.interface, x=-200, y=200)
 # the port number that this script is listening to will change.
 
 notification_url = gns3_project.notification_url()
-if notification_url:
+if args.wait and notification_url:
     user_data['phone_home'] = {'url': notification_url, 'tries' : 1}
 
 if args.debug:
@@ -128,6 +130,6 @@ if args.disk and args.disk > 2048:
 # a local IP address suitable for a callback.
 
 if notification_url:
-    gns3_project.start_nodes(ubuntu)
+    gns3_project.start_nodes(ubuntu, wait_for_everything=args.wait)
 else:
     gns3_project.start_node(ubuntu)
