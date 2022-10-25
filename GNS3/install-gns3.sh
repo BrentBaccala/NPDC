@@ -113,6 +113,8 @@ if [ "$1" = "remove-service" ]; then
     systemctl disable veth
     systemctl stop veth
     rm /etc/systemd/system/veth.service
+    systemctl daemon-reload
+    systemctl reset-failed
     exit 0
 fi
 
@@ -227,6 +229,19 @@ if ! systemctl --all --type service | grep -q veth.service; then
     echo "Installing veth.service"
     # Routed configuration
 
+    if which resolvectl >& /dev/null; then
+	# Ubuntu 20.04 LTS
+	ADD_DNS_COMMAND="ExecStart=/usr/bin/resolvectl dns veth-host $FIRST_HOST"
+	ADD_DOMAIN_COMMAND="ExecStart=/usr/bin/resolvectl domain veth-host $DOMAIN"
+    elif which systemd-resolve >& /dev/null; then
+	# Ubuntu 18.04 LTS
+	ADD_DNS_COMMAND="ExecStart=/usr/bin/systemd-resolve --interface=veth-host --set-dns=$FIRST_HOST"
+	ADD_DOMAIN_COMMAND="ExecStart=/usr/bin/systemd-resolve --interface=veth-host --set-domain=$DOMAIN"
+    else
+	ADD_DNS_COMMAND=""
+	ADD_DOMAIN_COMMAND=""
+	echo "Neither resolvectl nor systemd-resolve available; veth service won't configure DNS"
+    fi
     tee /etc/systemd/system/veth.service >/dev/null <<EOF
 [Unit]
 Description=Configure virtual ethernet for GNS3
@@ -240,8 +255,8 @@ ExecStart=/sbin/ip link set dev veth up
 ExecStart=/sbin/ip link set dev veth-host up
 ExecStart=/sbin/ip addr add $FIRST_HOST/$MASKLEN broadcast $BROADCAST dev veth-host
 ExecStart=/sbin/ethtool -K veth-host tx off
-ExecStart=resolvectl dns veth-host $FIRST_HOST
-ExecStart=resolvectl domain veth-host $DOMAIN
+$ADD_DNS_COMMAND
+$ADD_DOMAIN_COMMAND
 
 [Install]
 WantedBy=multi-user.target
@@ -255,6 +270,9 @@ else
     # The script has already run at least once.  Make sure all the settings are consistent.
 
     VETH_DOMAIN=$(grep 'resolvectl domain' /etc/systemd/system/veth.service | sed 's/.* //')
+    if [ "$VETH_DOMAIN" == "" ]; then
+	VETH_DOMAIN=$(grep 'set-domain' /etc/systemd/system/veth.service | sed 's/.*=//')
+    fi
     VETH_SUBNET=$(grep 'ip addr add' /etc/systemd/system/veth.service | sed -E 's|.* ([.0-9]*/[0-9]*).*|\1|')
 
     if [ "$VETH_DOMAIN" != "$DOMAIN" ]; then
