@@ -35,8 +35,11 @@
 import gns3
 import math
 import json
-import napalm
 import argparse
+try:
+    import napalm
+except ModuleNotFoundError:
+    napalm = None
 
 # Parse the command line options
 
@@ -188,16 +191,17 @@ gns3_project.start_nodes(*CSRv)
 
 # TOPOLOGY UP AND RUNNING
 
-print("Running ping tests...")
+if napalm:
+    print("Running ping tests...")
 
-dev = napalm.get_network_driver('ios')
+    dev = napalm.get_network_driver('ios')
 
-local_ip = gns3_project.get_local_ip()
+    local_ip = gns3_project.get_local_ip()
 
-for hostname,addr in gns3_project.httpd.instances_reported.items():
-    device = dev(hostname=addr, username='cisco', password='cisco')
-    device.open()
-    print(json.dumps(device.ping(local_ip), indent=4))
+    for hostname,addr in gns3_project.httpd.instances_reported.items():
+        device = dev(hostname=addr, username='cisco', password='cisco')
+        device.open()
+        print(json.dumps(device.ping(local_ip), indent=4))
 
-for hostname in hostnames:
-    print("{:16} IN A {}".format(hostname, gns3_project.httpd.instances_reported[hostname]))
+    for hostname in hostnames:
+        print("{:16} IN A {}".format(hostname, gns3_project.httpd.instances_reported[hostname]))
