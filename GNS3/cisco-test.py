@@ -20,8 +20,12 @@
 
 import gns3
 import json
-import napalm
 import argparse
+try:
+    import napalm
+except ModuleNotFoundError:
+    napalm = None
+
 
 # Parse the command line options
 
@@ -136,9 +140,10 @@ gns3_project.start_nodes(cisco)
 
 print("Running ping test...")
 
-dev = napalm.get_network_driver('ios')
+if napalm:
+    dev = napalm.get_network_driver('ios')
 
-for hostname,addr in gns3_project.httpd.instances_reported.items():
-    device = dev(hostname=addr, username='cisco', password='cisco')
-    device.open()
-    print(json.dumps(device.ping(gns3_project.get_local_ip()), indent=4))
+    for hostname,addr in gns3_project.httpd.instances_reported.items():
+        device = dev(hostname=addr, username='cisco', password='cisco')
+        device.open()
+        print(json.dumps(device.ping(gns3_project.get_local_ip()), indent=4))
