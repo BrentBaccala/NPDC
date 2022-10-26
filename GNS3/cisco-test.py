@@ -138,9 +138,9 @@ if cloud_status != 'started':
 
 gns3_project.start_nodes(cisco)
 
-print("Running ping test...")
-
 if napalm:
+    print("Running ping test...")
+
     dev = napalm.get_network_driver('ios')
 
     for hostname,addr in gns3_project.httpd.instances_reported.items():
