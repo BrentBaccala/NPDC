@@ -398,6 +398,7 @@ ddns-updates on;
 ddns-update-style standard;
 update-optimization off;
 authoritative;
+ddns-local-address4 $FIRST_HOST;
 
 allow unknown-clients;
 default-lease-time 10;
