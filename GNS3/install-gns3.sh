@@ -335,16 +335,18 @@ REVERSE_DOMAIN=$(echo $ZERO_HOST | tr . \\n | tac | tr \\n . | sed 's/^0\.//')in
 if [ ! -r /etc/bind/named.conf.local ]; then
     mkdir -p /etc/bind
     tee -a /etc/bind/named.conf.local >/dev/null <<EOF
+include "/etc/bind/rndc.key";
+
 zone "$DOMAIN" {
 	type master;
 	file "/var/lib/bind/$DOMAIN.zone";
-	allow-update { $SUBNET; };
+	allow-update { $SUBNET; key rndc-key; };
 };
 
 zone "$REVERSE_DOMAIN" {
 	type master;
 	file "/var/lib/bind/$ZERO_HOST.zone";
-	allow-update { $SUBNET; };
+	allow-update { $SUBNET; key rndc-key; };
 };
 EOF
 else
@@ -398,15 +400,16 @@ ddns-updates on;
 ddns-update-style standard;
 update-optimization off;
 authoritative;
-ddns-local-address4 $FIRST_HOST;
+
+include "/etc/dhcp/rndc.key";
 
 allow unknown-clients;
 default-lease-time 10;
 max-lease-time 10;
 log-facility local7;
 
-zone $DOMAIN. { }
-zone $REVERSE_DOMAIN. { }
+zone $DOMAIN. { key rndc-key; }
+zone $REVERSE_DOMAIN. { primary ns.test; key rndc-key; }
 
 subnet $ZERO_HOST netmask 255.255.255.0 {
  range $FIRST_DHCP $LAST_DHCP;
@@ -430,6 +433,16 @@ need_pkg isc-dhcp-server
 
 chown bind.bind /var/lib/bind/$DOMAIN.zone
 chown bind.bind /var/lib/bind/$ZERO_HOST.zone
+
+# When the bind package installed, it created an access key.
+# dhcpd needs it to update DNS entries.  Copy the file
+# to a location and permission accessible to dhcpd.
+#
+# dhcpd can't read the key if its permissions are 440.
+
+cp /etc/bind/rndc.key /etc/dhcp/
+chmod 444 /etc/dhcp/rndc.key
+chown dhcpd.dhcpd /etc/dhcp/rndc.key
 
 # We need packet forwarding turned on, otherwise the virtual machines
 # won't be able to access the Internet.
