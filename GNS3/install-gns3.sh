@@ -330,12 +330,20 @@ else
     echo "/etc/bind/named.conf.options already exists"
 fi
 
+REVERSE_DOMAIN=$(echo $ZERO_HOST | tr . \\n | tac | tr \\n . | sed 's/^0\.//')in-addr.arpa
+
 if [ ! -r /etc/bind/named.conf.local ]; then
     mkdir -p /etc/bind
     tee -a /etc/bind/named.conf.local >/dev/null <<EOF
 zone "$DOMAIN" {
 	type master;
 	file "/var/lib/bind/$DOMAIN.zone";
+	allow-update { $SUBNET; };
+};
+
+zone "$REVERSE_DOMAIN" {
+	type master;
+	file "/var/lib/bind/$ZERO_HOST.zone";
 	allow-update { $SUBNET; };
 };
 EOF
@@ -362,6 +370,24 @@ else
     echo "/var/lib/bind/$DOMAIN.zone already exists"
 fi
 
+if [ ! -r /var/lib/bind/$ZERO_HOST.zone ]; then
+    mkdir -p /var/lib/bind
+    tee -a /var/lib/bind/$ZERO_HOST.zone >/dev/null <<EOF
+\$ORIGIN $REVERSE_DOMAIN.
+\$TTL 604800 ; 1 week
+@ IN SOA ns.$DOMAIN. dnsadmin.$DOMAIN. (
+   2022102301 ; serial
+   28800   ; refresh (8 hours)
+   3600    ; retry (1 hour)
+   302400   ; expire (3 days 12 hours)
+   43200   ; minimum (12 hours)
+   )
+   NS ns.$DOMAIN.
+EOF
+else
+    echo "/var/lib/bind/$ZERO_HOST.zone already exists"
+fi
+
 # DHCP server: 10 second lease time because I'm tearing down and
 # rebulding the virtual network so often
 
@@ -379,6 +405,7 @@ max-lease-time 10;
 log-facility local7;
 
 zone $DOMAIN. { }
+zone $REVERSE_DOMAIN. { }
 
 subnet $ZERO_HOST netmask 255.255.255.0 {
  range $FIRST_DHCP $LAST_DHCP;
@@ -398,9 +425,10 @@ need_pkg isc-dhcp-server
 
 # We had to wait bind to be installed for this to work, since
 # otherwise we might not have a 'bind' user, and yes, the
-# file needs to be writable by bind to allow dynamic updates.
+# files need to be writable by bind to allow dynamic updates.
 
 chown bind.bind /var/lib/bind/$DOMAIN.zone
+chown bind.bind /var/lib/bind/$ZERO_HOST.zone
 
 # We need packet forwarding turned on, otherwise the virtual machines
 # won't be able to access the Internet.
