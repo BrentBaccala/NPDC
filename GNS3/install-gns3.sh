@@ -390,8 +390,11 @@ else
     echo "/var/lib/bind/$ZERO_HOST.zone already exists"
 fi
 
-# DHCP server: 10 second lease time because I'm tearing down and
-# rebulding the virtual network so often
+# DHCP server: 120 second lease time because I'm tearing down and
+# rebulding the virtual network so often.
+#
+# I tried doing this with a 10 second lease time, but that causes
+# OSPF route flaps (either bird or frr) on the virtual nodes.
 
 if [ ! -r /etc/dhcp/dhcpd.conf ]; then
     mkdir -p /etc/dhcp
@@ -404,8 +407,8 @@ authoritative;
 include "/etc/dhcp/rndc.key";
 
 allow unknown-clients;
-default-lease-time 10;
-max-lease-time 10;
+default-lease-time 120;
+max-lease-time 120;
 log-facility local7;
 
 zone $DOMAIN. { key rndc-key; }
