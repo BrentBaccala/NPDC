@@ -250,6 +250,7 @@ Before=isc-dhcp-server.service
 
 [Service]
 Type=oneshot
+RemainAfterExit=yes
 ExecStart=/sbin/ip link add dev veth type veth peer name veth-host
 ExecStart=/sbin/ip link set dev veth up
 ExecStart=/sbin/ip link set dev veth-host up
@@ -257,6 +258,7 @@ ExecStart=/sbin/ip addr add $FIRST_HOST/$MASKLEN broadcast $BROADCAST dev veth-h
 ExecStart=/sbin/ethtool -K veth-host tx off
 $ADD_DNS_COMMAND
 $ADD_DOMAIN_COMMAND
+ExecStop=/sbin/ip link del dev veth
 
 [Install]
 WantedBy=multi-user.target
