@@ -414,7 +414,7 @@ max-lease-time 120;
 log-facility local7;
 
 zone $DOMAIN. { key rndc-key; }
-zone $REVERSE_DOMAIN. { primary ns.test; key rndc-key; }
+zone $REVERSE_DOMAIN. { primary ns.$DOMAIN; key rndc-key; }
 
 subnet $ZERO_HOST netmask 255.255.255.0 {
  range $FIRST_DHCP $LAST_DHCP;
