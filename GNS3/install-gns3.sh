@@ -355,6 +355,13 @@ else
     echo "/etc/bind/named.conf.local already exists"
 fi
 
+# Set SOA minimum (TTL for negative caching) to 60 seconds
+#
+# Since DHCP lease times are 120 seconds, their dynamic DNS records
+# are 60 seconds (1/2 lease time; documented in source code)
+#
+# Negative caching for the same period seems reasonable
+
 if [ ! -r /var/lib/bind/$DOMAIN.zone ]; then
     mkdir -p /var/lib/bind
     tee -a /var/lib/bind/$DOMAIN.zone >/dev/null <<EOF
@@ -364,8 +371,8 @@ if [ ! -r /var/lib/bind/$DOMAIN.zone ]; then
    2022102301 ; serial
    28800   ; refresh (8 hours)
    3600    ; retry (1 hour)
-   302400   ; expire (3 days 12 hours)
-   43200   ; minimum (12 hours)
+   302400  ; expire (3 days 12 hours)
+   60      ; minimum (1 minute)
    )
    NS ns.$DOMAIN.
 ns  A $FIRST_HOST
@@ -383,8 +390,8 @@ if [ ! -r /var/lib/bind/$ZERO_HOST.zone ]; then
    2022102301 ; serial
    28800   ; refresh (8 hours)
    3600    ; retry (1 hour)
-   302400   ; expire (3 days 12 hours)
-   43200   ; minimum (12 hours)
+   302400  ; expire (3 days 12 hours)
+   60      ; minimum (1 minute)
    )
    NS ns.$DOMAIN.
 EOF
