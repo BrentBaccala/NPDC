@@ -34,7 +34,7 @@
 # There are two important environment variables you can set:
 #
 # SUBNET           virtual link's subnet (default 192.168.8.0/24)
-# DOMAIN           virtual link's DNS domain (default "test")
+# DOMAIN           virtual link's DNS domain (default is the bare metal machine's hostname)
 #
 # There's also some options you can give as the first argument:
 #
@@ -52,7 +52,8 @@
 #    - ./install-gns3.sh disable-nat
 #    - add-apt-repository --remove ppa:gns3
 
-DOMAIN="${DOMAIN:-test}"
+HOSTNAME=$(hostname)
+DOMAIN="${DOMAIN:-$(hostname)}"
 SUBNET="${SUBNET:-192.168.8.0/24}"
 
 if [ $EUID != 0 ]; then
@@ -367,15 +368,15 @@ if [ ! -r /var/lib/bind/$DOMAIN.zone ]; then
     tee -a /var/lib/bind/$DOMAIN.zone >/dev/null <<EOF
 \$ORIGIN $DOMAIN.
 \$TTL 604800 ; 1 week
-@ IN SOA ns.$DOMAIN. dnsadmin.$DOMAIN. (
+@ IN SOA $HOSTNAME.$DOMAIN. dnsadmin.$DOMAIN. (
    2022102301 ; serial
    28800   ; refresh (8 hours)
    3600    ; retry (1 hour)
    302400  ; expire (3 days 12 hours)
    60      ; minimum (1 minute)
    )
-   NS ns.$DOMAIN.
-ns  A $FIRST_HOST
+   NS $HOSTNAME.$DOMAIN.
+$HOSTNAME  A $FIRST_HOST
 EOF
 else
     echo "/var/lib/bind/$DOMAIN.zone already exists"
@@ -386,14 +387,14 @@ if [ ! -r /var/lib/bind/$ZERO_HOST.zone ]; then
     tee -a /var/lib/bind/$ZERO_HOST.zone >/dev/null <<EOF
 \$ORIGIN $REVERSE_DOMAIN.
 \$TTL 604800 ; 1 week
-@ IN SOA ns.$DOMAIN. dnsadmin.$DOMAIN. (
+@ IN SOA $HOSTNAME.$DOMAIN. dnsadmin.$DOMAIN. (
    2022102301 ; serial
    28800   ; refresh (8 hours)
    3600    ; retry (1 hour)
    302400  ; expire (3 days 12 hours)
    60      ; minimum (1 minute)
    )
-   NS ns.$DOMAIN.
+   NS $HOSTNAME.$DOMAIN.
 EOF
 else
     echo "/var/lib/bind/$ZERO_HOST.zone already exists"
@@ -421,7 +422,7 @@ max-lease-time 120;
 log-facility local7;
 
 zone $DOMAIN. { key rndc-key; }
-zone $REVERSE_DOMAIN. { primary ns.$DOMAIN; key rndc-key; }
+zone $REVERSE_DOMAIN. { primary $HOSTNAME.$DOMAIN; key rndc-key; }
 
 subnet $ZERO_HOST netmask 255.255.255.0 {
  range $FIRST_DHCP $LAST_DHCP;
