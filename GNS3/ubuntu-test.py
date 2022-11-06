@@ -50,13 +50,13 @@ args = parser.parse_args()
 
 gns3_server, gns3_project = gns3.open_project_with_standard_options(args)
 
-# If the user didn't specify a cloud image, use the first 'ubuntu' image on the server.
+# If the user didn't specify a cloud image, use the first 'ubuntu' 'cloudimg' image on the server.
 # If the user did specify an image, check to make sure it exists.
 
 if args.client_image:
     assert args.client_image in gns3_server.images()
 else:
-    args.client_image = next(image for image in gns3_server.images() if image.startswith('ubuntu'))
+    args.client_image = next(image for image in gns3_server.images() if image.startswith('ubuntu') and 'cloudimg' in image)
 
 # Obtain any credentials to authenticate ourself to the VM
 
