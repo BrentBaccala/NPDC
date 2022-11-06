@@ -34,6 +34,8 @@ parser.add_argument('--disk', type=int,
                     help='set disk size in MB')
 parser.add_argument('-m', '--memory', type=int,
                     help='MBs of virtual RAM (default 256)')
+parser.add_argument('--vnc', action="store_true",
+                    help='enable VNC console')
 parser.add_argument('--debug', action="store_true",
                     help='allow console login with username ubuntu and password ubuntu')
 parser.add_argument('--wait', action="store_true",
@@ -99,7 +101,7 @@ if args.debug:
 
 switch = gns3_project.switch('InternetSwitch', x=0, y=0)
 
-ubuntu = gns3_project.ubuntu_node(user_data, image=args.client_image, ram=args.memory, x=200, y=200)
+ubuntu = gns3_project.ubuntu_node(user_data, image=args.client_image, ram=args.memory, vnc=args.vnc, x=200, y=200)
 
 gns3_project.link(ubuntu, 0, switch)
 gns3_project.link(cloud, 0, switch)
