@@ -285,7 +285,17 @@ class Project:
         result.raise_for_status()
 
     def remove(self):
-        result = requests.delete(self.url)
+        result = requests.delete(self.url, auth=self.auth)
+        result.raise_for_status()
+
+    def variables(self):
+        result = requests.get(self.url, auth=self.auth)
+        result.raise_for_status()
+        return {d['name']:d['value'] for d in result.json()['variables']}
+
+    def set_variables(self, var):
+        data = {'variables': [{'name':k, 'value':v} for k,v in var.items()]}
+        result = requests.put(self.url, auth=self.auth, data=json.dumps(data))
         result.raise_for_status()
 
     def nodes(self):
