@@ -66,13 +66,28 @@ class StreamingIteratorWithProgressBar(StreamingIterator):
         return StreamingIterator.read(self, size)
 
 if args.filename:
-    with open(args.filename, 'rb') as f:
-        print("uploading", args.filename)
-        if not ProgressBar:
-            print("clint package not available; no progress bar will be displayed")
-        url = "{}/compute/qemu/images/{}".format(gns3_server.url, os.path.basename(args.filename))
-        size = os.stat(args.filename).st_size
-        with StreamingIteratorWithProgressBar(size, f) as streamer:
-            result = requests.post(url, auth=gns3_server.auth, data=streamer,
-                                   headers={'Content-Type': 'application/octet-stream'})
-            result.raise_for_status()
+    if args.filename.startswith("http:") or args.filename.startswith("https:"):
+        response = requests.get(args.filename, stream=True)
+        if response.status_code == 200:
+            print("uploading", args.filename)
+            if not ProgressBar:
+                print("clint package not available; no progress bar will be displayed")
+            url = "{}/compute/qemu/images/{}".format(gns3_server.url, os.path.basename(args.filename))
+            size = int(response.headers['Content-Length'])
+            # see https://stackoverflow.com/a/13137873/1493790
+            response.raw.decode_content = True
+            with StreamingIteratorWithProgressBar(size, response.raw) as streamer:
+                result = requests.post(url, auth=gns3_server.auth, data=streamer,
+                                       headers={'Content-Type': 'application/octet-stream'})
+                result.raise_for_status()
+    else:
+        with open(args.filename, 'rb') as f:
+            print("uploading", args.filename)
+            if not ProgressBar:
+                print("clint package not available; no progress bar will be displayed")
+            url = "{}/compute/qemu/images/{}".format(gns3_server.url, os.path.basename(args.filename))
+            size = os.stat(args.filename).st_size
+            with StreamingIteratorWithProgressBar(size, f) as streamer:
+                result = requests.post(url, auth=gns3_server.auth, data=streamer,
+                                       headers={'Content-Type': 'application/octet-stream'})
+                result.raise_for_status()
