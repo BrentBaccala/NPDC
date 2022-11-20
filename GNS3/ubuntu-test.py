@@ -43,6 +43,8 @@ parser.add_argument('--wait', action="store_true",
 
 parser._mutually_exclusive_groups[0].add_argument('client_image', metavar='FILENAME', nargs='?',
                     help='client image to test')
+parser._mutually_exclusive_groups[0].add_argument('-r', '--release', type=int,
+                    help='Ubuntu release number')
 
 args = parser.parse_args()
 
@@ -56,7 +58,14 @@ gns3_server, gns3_project = gns3.open_project_with_standard_options(args)
 if args.client_image:
     assert args.client_image in gns3_server.images()
 else:
-    args.client_image = next(image for image in gns3_server.images() if image.startswith('ubuntu') and 'cloudimg' in image)
+    if args.release:
+        try:
+            args.client_image = next(image for image in gns3_server.images() if image.startswith(f'ubuntu-{args.release}') and 'cloudimg' in image)
+        except StopIteration:
+            print(f'No ubuntu image matching release {args.release}')
+            exit(1)
+    else:
+        args.client_image = next(image for image in gns3_server.images() if image.startswith('ubuntu') and 'cloudimg' in image)
 
 # Obtain any credentials to authenticate ourself to the VM
 
