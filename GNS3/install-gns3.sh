@@ -33,7 +33,7 @@
 #
 # There are two important environment variables you can set:
 #
-# SUBNET           virtual link's subnet (default 192.168.8.0/24)
+# SUBNET           virtual link's subnet (default is a random /24 in 10.0.0.0/8)
 # DOMAIN           virtual link's DNS domain (default is the bare metal machine's hostname)
 #
 # There's also some options you can give as the first argument:
@@ -53,8 +53,6 @@
 #    - add-apt-repository --remove ppa:gns3
 
 HOSTNAME=$(hostname)
-DOMAIN="${DOMAIN:-$(hostname)}"
-SUBNET="${SUBNET:-192.168.8.0/24}"
 
 if [ $EUID != 0 ]; then
     echo "You must run this command as root."
@@ -63,6 +61,33 @@ fi
 
 # https://stackoverflow.com/questions/32145643/how-to-use-ctrlc-to-stop-whole-script-not-just-current-command
 trap "echo; exit" INT
+
+if systemctl --all --type service | grep -q veth.service; then
+
+    # The script has already run at least once.  Make sure all the settings are consistent.
+
+    VETH_DOMAIN=$(grep 'resolvectl domain' /etc/systemd/system/veth.service | sed 's/.* //')
+    if [ "$VETH_DOMAIN" == "" ]; then
+	VETH_DOMAIN=$(grep 'set-domain' /etc/systemd/system/veth.service | sed 's/.*=//')
+    fi
+    VETH_SUBNET=$(grep 'ip addr add' /etc/systemd/system/veth.service | sed -E 's|.* ([.0-9]*/[0-9]*).*|\1|')
+
+    DOMAIN="${DOMAIN:-$VETH_DOMAIN}"
+    SUBNET="${SUBNET:-$VETH_SUBNET}"
+
+    if [ "$VETH_DOMAIN" != "$DOMAIN" ]; then
+	echo "DNS domain in veth.service ($VETH_DOMAIN) does not match script's DOMAIN variable ($DOMAIN)"
+	exit 1
+    fi
+    if [ "$VETH_SUBNET" != "$FIRST_HOST/$MASKLEN" ]; then
+	echo "Subnet in veth.service ($VETH_SUBNET) does not match script's SUBNET variable ($SUBNET)"
+	exit 1
+    fi
+else
+    # The script has not run before.  Use DOMAIN and SUBNET from environment variables, or take defaults
+    DOMAIN="${DOMAIN:-$(hostname)}"
+    SUBNET="${SUBNET:-10.$(($RANDOM%256)).$(($RANDOM%256)).0/24}"
+fi
 
 function need_ppa() {
     if find /etc/apt/ -name *.list | xargs cat | grep -v '^#' | grep $1/ppa >/dev/null; then
@@ -269,23 +294,6 @@ EOF
     systemctl start veth
 else
     echo "service 'veth' already exists"
-
-    # The script has already run at least once.  Make sure all the settings are consistent.
-
-    VETH_DOMAIN=$(grep 'resolvectl domain' /etc/systemd/system/veth.service | sed 's/.* //')
-    if [ "$VETH_DOMAIN" == "" ]; then
-	VETH_DOMAIN=$(grep 'set-domain' /etc/systemd/system/veth.service | sed 's/.*=//')
-    fi
-    VETH_SUBNET=$(grep 'ip addr add' /etc/systemd/system/veth.service | sed -E 's|.* ([.0-9]*/[0-9]*).*|\1|')
-
-    if [ "$VETH_DOMAIN" != "$DOMAIN" ]; then
-	echo "DNS domain in veth.service ($VETH_DOMAIN) does not match script's DOMAIN variable ($DOMAIN)"
-	exit 1
-    fi
-    if [ "$VETH_SUBNET" != "$FIRST_HOST/$MASKLEN" ]; then
-	echo "Subnet in veth.service ($VETH_SUBNET) does not match script's SUBNET variable ($SUBNET)"
-	exit 1
-    fi
 fi
 
 # DNS server
