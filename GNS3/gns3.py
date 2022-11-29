@@ -291,7 +291,10 @@ class Project:
     def variables(self):
         result = requests.get(self.url, auth=self.auth)
         result.raise_for_status()
-        return {d['name']:d['value'] for d in result.json()['variables']}
+        if 'variables' in result.json():
+            return {d['name']:d['value'] for d in result.json()['variables']}
+        else:
+            return {}
 
     def set_variables(self, var):
         data = {'variables': [{'name':k, 'value':v} for k,v in var.items()]}
@@ -475,6 +478,63 @@ class Project:
         self.httpd.shutdown()
 
     ### FUNCTIONS TO CREATE VARIOUS KINDS OF GNS3 OBJECTS
+
+    def create_raw_qemu_node(self, name, image, iso_image=None, properties={}, config={}, disk=None):
+        r"""create_qemu_node(name, image, images, properties, config, disk)
+        images are files to place in the ISO image (a dictionary mapping file names to data)
+        properties are additional items to add to the properties structure
+        config are additional items to add to the qemnu node structure
+        disk is a disk size is MB (default is to not resize the default image)
+        """
+
+        # Configure a QEMU cloud node
+
+        print(f"Configuring {name} node...")
+
+        url = "{}/nodes".format(self.url)
+
+        # It's important to use the scsi disk interface, because the IDE interface in qemu
+        # has some kind of bug, probably in its handling of DISCARD operations, that
+        # causes a thin provisioned disk to balloon up with garbage.
+        #
+        # See https://unix.stackexchange.com/questions/700050
+        # and https://bugs.launchpad.net/ubuntu/+source/qemu/+bug/1974100
+
+        qemu_node = {
+            "compute_id": "local",
+            "name": name,
+            "node_type": "qemu",
+            "properties": {
+                "adapter_type" : "virtio-net-pci",
+                "hda_disk_image": image,
+                "hda_disk_interface": "scsi",
+                "cdrom_image" : iso_image,
+                "qemu_path": "/usr/bin/qemu-system-x86_64",
+#                "process_priority": "very high",
+            },
+
+            # ens4, ens5, ens6 seems to be the numbering scheme on Ubuntu 20,
+            # but we can't replicate that with a Python format string
+            "port_name_format": "eth{}",
+
+            "symbol": ":/symbols/qemu_guest.svg",
+        }
+
+        qemu_node['properties'].update(properties)
+        qemu_node.update(config)
+
+        result = requests.post(url, auth=self.auth, data=json.dumps(qemu_node))
+        result.raise_for_status()
+        qemu = result.json()
+
+        if disk and disk > 2048:
+            url = "{}/compute/projects/{}/qemu/nodes/{}/resize_disk".format(self.server.url, self.project_id, qemu['node_id'])
+            resize_obj = {'drive_name' : 'hda', 'extend' : disk - 2048}
+            result = requests.post(url, auth=self.auth, data=json.dumps(resize_obj))
+            result.raise_for_status()
+
+        self.nodes()  # update self.cached_nodes
+        return qemu
 
     def create_qemu_node(self, name, image, images=[], properties={}, config={}, disk=None):
         r"""create_qemu_node(name, image, images, properties, config, disk)
