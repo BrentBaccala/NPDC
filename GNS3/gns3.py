@@ -291,7 +291,7 @@ class Project:
     def variables(self):
         result = requests.get(self.url, auth=self.auth)
         result.raise_for_status()
-        if 'variables' in result.json():
+        if result.json()['variables']:
             return {d['name']:d['value'] for d in result.json()['variables']}
         else:
             return {}
