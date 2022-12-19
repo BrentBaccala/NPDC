@@ -79,7 +79,7 @@ if systemctl --all --type service | grep -q veth.service; then
 	echo "DNS domain in veth.service ($VETH_DOMAIN) does not match script's DOMAIN variable ($DOMAIN)"
 	exit 1
     fi
-    if [ "$VETH_SUBNET" != "$FIRST_HOST/$MASKLEN" ]; then
+    if [ "$VETH_SUBNET" != "$SUBNET" ]; then
 	echo "Subnet in veth.service ($VETH_SUBNET) does not match script's SUBNET variable ($SUBNET)"
 	exit 1
     fi
