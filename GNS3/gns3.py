@@ -484,6 +484,11 @@ class Project:
                     self.start_nodeid(start_node)
                     waiting_for_nodeids_to_start.add(start_node)
 
+                if wait_for_everything:
+                    waitlist = waiting_for_nodeids_to_start
+                else:
+                    waitlist = waiting_for_nodeids_to_start.intersection(all_dependent_nodes)
+
         self.httpd.shutdown()
 
     ### FUNCTIONS TO CREATE VARIOUS KINDS OF GNS3 OBJECTS
