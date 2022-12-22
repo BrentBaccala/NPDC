@@ -362,6 +362,15 @@ class Project:
                 result = requests.delete(node_url, auth=self.auth)
                 result.raise_for_status()
 
+    def delete(self, nodeid):
+        "Delete a node in the project"
+        for node in self.nodes():
+            if node['name'] == nodeid or node['node_id'] == nodeid:
+                if self.verbose: print("Deleting node", node['name'])
+                node_url = "{}/nodes/{}".format(self.url, node['node_id'])
+                result = requests.delete(node_url, auth=self.auth)
+                result.raise_for_status()
+
     ### TRACK WHICH OBJECTS DEPEND ON WHICH OTHERS FOR START ORDER
 
     # a map from nodeID to a list of node dictionaries
