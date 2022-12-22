@@ -411,7 +411,7 @@ class Project:
     def start_node(self, node):
         self.start_nodeid(node['node_id'])
 
-    def start_nodes(self, *node_list, wait_for_everything=False):
+    def start_nodes(self, *node_list, wait_for_everything=None):
         """start_nodes(*node_list, wait_for_everything=False)
         default node_list is all nodes we've created this session
         wait_for_everything, if True, will wait for all of them to start,
@@ -421,6 +421,9 @@ class Project:
         to boot, then start the server, but return without waiting for the server
         to finish booting, unless wait_for_everything is True.
         """
+
+        if not wait_for_everything:
+            wait_for_everything = self.wait_all
 
         if not node_list:
             node_list = self.nodes_waiting_to_start
@@ -918,6 +921,8 @@ def parser(project_name, interface=DEFAULT_INTERFACE):
                         help=f'name of the GNS3 project (default "{project_name}")')
     parser.add_argument('-I', '--interface', default=interface,
                         help=f'network interface for Internet access (default "{interface}")')
+    parser.add_argument('--wait-all', action="store_true",
+                       help='wait for all newly created nodes to report cloud-init done before exiting script')
     group = parser.add_mutually_exclusive_group()
     group.add_argument('--delete-everything', action="store_true",
                        help='delete everything in the project instead of creating it')
@@ -951,6 +956,8 @@ def open_project_with_standard_options(args):
     gns3_project = gns3_server.project(args.project, create=True)
 
     gns3_project.open()
+
+    gns3_project.wait_all = args.wait_all
 
     if args.ls:
         print([n['name'] for n in gns3_project.nodes()])
