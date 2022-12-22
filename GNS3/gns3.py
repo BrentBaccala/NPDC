@@ -35,7 +35,7 @@
 #    --ls (nodes in a project)
 #    --ls-all (nodes and links with full JSON data)
 #    --delete-everything (all nodes in a project)
-#    --delete string (all nodes in project matching string)
+#    --delete-substring string (all nodes in project matching string)
 
 import sys
 import glob
@@ -907,7 +907,7 @@ def parser(project_name, interface=DEFAULT_INTERFACE):
     group = parser.add_mutually_exclusive_group()
     group.add_argument('--delete-everything', action="store_true",
                        help='delete everything in the project instead of creating it')
-    group.add_argument('--delete', type=str,
+    group.add_argument('--delete-substring', type=str,
                        help='delete everything in the project matching a substring')
     group.add_argument('--ls', action="store_true",
                        help='list running nodes')
@@ -951,8 +951,8 @@ def open_project_with_standard_options(args):
         gns3_project.delete_everything()
         exit(0)
 
-    if args.delete:
-        gns3_project.delete_substring(args.delete)
+    if args.delete_substring:
+        gns3_project.delete_substring(args.delete_substring)
         exit(0)
 
     if args.snap_to_grid:
