@@ -272,7 +272,10 @@ if ! systemctl --all --type service | grep -q veth.service; then
 [Unit]
 Description=Configure virtual ethernet for GNS3
 After=network.target
+# isc-dhcp-server won't bind to interfaces that don't exist when it starts
 Before=isc-dhcp-server.service
+# If bird has no interfaces when it starts, and no router id configured, it will exit with failure
+Before=bird.service
 
 [Service]
 Type=oneshot
