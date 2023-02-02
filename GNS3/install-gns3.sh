@@ -46,11 +46,16 @@
 #
 # To completely undo what this script does, do the following (as root):
 #    - su gns3 -c "env XDG_RUNTIME_DIR=/run/user/$(id -u gns3) systemctl --user stop gns3"
+#    - pkill -u gns3
 #    - deluser --remove-home gns3
 #    - ./install-gns3.sh remove-service
-#    - apt purge gns3-server dynamips makepasswd genisoimage bind9 isc-dhcp-server bird
 #    - ./install-gns3.sh disable-nat
+#    - apt purge gns3-server dynamips makepasswd genisoimage bind9 isc-dhcp-server bird
 #    - add-apt-repository --remove ppa:gns3
+#
+# Note that the 'apt purge' step will remove all configuration files associated with
+# the nameserver (bind9), the DHCP server (isc-dhcp-server) and the OSPF daemon (bird).
+# Any local changes you've made to these files will be deleted by this step.
 
 HOSTNAME=$(hostname)
 
