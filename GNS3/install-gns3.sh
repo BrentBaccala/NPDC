@@ -522,6 +522,8 @@ else
 fi
 
 need_pkg bird
+systemctl enable bird
+systemctl start bird
 
 echo
 echo GNS3 user = gns3
