@@ -36,28 +36,28 @@ are running. gns3 virtual machines will not start, and vice versa.
 
    If you used the gns3 GUI to test access to the server, you already have a suitable `~/.config/GNS3/2.2/gns3_server.conf`.
 
-1. Download a current Ubuntu 20 cloud image from Canonical:
-
-   `wget https://cloud-images.ubuntu.com/releases/focal/release/ubuntu-20.04-server-cloudimg-amd64.img`
-
-1. Upload to the gns3 server using `upload-image.py`:
+1. Install these Python packages for the next step:
 
    ```
    sudo apt install python3-requests-toolbelt python3-clint
-   ./upload-image.py ubuntu-20.04-server-cloudimg-amd64.img
    ```
 
-   If this step works, then you have REST API access to the GNS3 server.
+
+1. Download a current Ubuntu 20 cloud image from Canonical and upload it to the gns3 server:
+
+   ```
+   ./upload-image.py https://cloud-images.ubuntu.com/releases/focal/release/ubuntu-20.04-server-cloudimg-amd64.img
+   ```
 
 1. You should now be able to boot an Ubuntu instance like this:
 
-   `./ubuntu-test.py --debug`
+   `./ubuntu-test.py --debug -m 512`
 
    Double-click on the icon that appears in the GUI to access the instance's console.
 
-   The `--debug` option adds a login with username `ubuntu` and password `ubuntu`.
+   The `--debug` option adds a login with username `ubuntu` and password `ubuntu`, and it's best to configure 512 MB of memory instead of the default 256 MB.
 
-   Login and verify, in particular, that networking is working properly.  You should have Internet access.
+   Login and verify, in particular, that networking is working properly.  You should have Internet access, and should be able to ssh into the device using `ssh ubuntu@ubuntu`
 
 1. Build a GUI image using `ubuntu.py`:
 
