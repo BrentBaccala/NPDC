@@ -966,6 +966,7 @@ def open_project_with_standard_options(args):
     if args.ls_all:
         print(json.dumps(gns3_project.nodes(), indent=4))
         print(json.dumps(gns3_project.links(), indent=4))
+        print(json.dumps(gns3_project.variables(), indent=4))
         exit(0)
 
     if args.delete_everything:
