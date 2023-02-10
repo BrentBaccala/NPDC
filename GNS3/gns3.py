@@ -481,7 +481,10 @@ class Project:
                 print('Waiting for', [names_by_node_id[nodeid] for nodeid in waitlist])
                 self.httpd.instance_report_cv.wait()
 
-                running_nodeids.update(node_ids_by_name[inst] for inst in self.httpd.instances_reported)
+                for inst in self.httpd.instances_reported:
+                    # Same consideration as before if a node was started and then deleted
+                    if inst in node_ids_by_name:
+                        running_nodeids.add(node_ids_by_name[inst])
 
                 waiting_for_nodeids_to_start.difference_update(running_nodeids)
 
