@@ -450,18 +450,27 @@ class Project:
 
         waiting_for_nodeids_to_start = set()
 
+        # If we declare a node that already ran once but isn't running now, we'll treat it
+        # here as a brand new node, start it (at some point in this function) and wait for
+        # it to phone home.  The problem is that phone home only happens once-per-instance,
+        # so it will never phone home and we'll wait forever for it.
+
         for node_name in node_names_to_start:
-            node_id = node_ids_by_name[node_name]
-            dependencies = self.node_dependencies.get(node_id, [])
-            # we'll need to start all nodes dependent on the nodes to start
-            for v in dependencies:
-                if v['name'] not in node_names_to_start:
-                    node_names_to_start.append(v['name'])
-            # if the node isn't running but all of its dependencies are, start it
-            if node_id not in running_nodeids and node_id not in waiting_for_nodeids_to_start:
-                if running_nodeids.issuperset([v['node_id'] for v in dependencies]):
-                    self.start_nodeid(node_id)
-                    waiting_for_nodeids_to_start.add(node_id)
+            # If we create a node, start it, then delete it, it will still be listed in
+            # node_names_to_start, but it no longer exists.  It won't appear in
+            # node_ids_by_name, so just skip it.
+            if node_name in node_ids_by_name:
+                node_id = node_ids_by_name[node_name]
+                dependencies = self.node_dependencies.get(node_id, [])
+                # we'll need to start all nodes dependent on the nodes to start
+                for v in dependencies:
+                    if v['name'] not in node_names_to_start:
+                        node_names_to_start.append(v['name'])
+                # if the node isn't running but all of its dependencies are, start it
+                if node_id not in running_nodeids and node_id not in waiting_for_nodeids_to_start:
+                    if running_nodeids.issuperset([v['node_id'] for v in dependencies]):
+                        self.start_nodeid(node_id)
+                        waiting_for_nodeids_to_start.add(node_id)
 
         with self.httpd.instance_report_cv:
             if wait_for_everything:
