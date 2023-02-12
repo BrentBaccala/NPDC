@@ -222,6 +222,7 @@ class Project:
         self.verbose = server.verbose
         self.cached_nodes = None
         self.nodes_waiting_to_start = []
+        self.telnet_nodeid = None
 
         # Bind to a local TCP port that will listen for callbacks.
         #
@@ -408,6 +409,17 @@ class Project:
         if node in self.nodes_waiting_to_start:
             self.nodes_waiting_to_start.remove(node)
 
+        # GNS3 only allows console connections from localhost (by default),
+        # so watching the console only works on localhost.
+        hostname = urllib.parse.urlparse(self.url).hostname
+        if hostname == 'localhost':
+            for node in self.nodes():
+                if node['node_id'] == nodeid:
+                    telnet_port = node['console']
+                    cmdline = ['telnet', hostname, str(telnet_port)]
+                    self.telnet_nodeid = nodeid
+                    self.telnet_proc = subprocess.Popen(cmdline)
+
     def start_node(self, node):
         self.start_nodeid(node['node_id'])
 
@@ -480,11 +492,12 @@ class Project:
             while waitlist:
                 print('Waiting for', [names_by_node_id[nodeid] for nodeid in waitlist])
                 self.httpd.instance_report_cv.wait()
-
                 for inst in self.httpd.instances_reported:
                     # Same consideration as before if a node was started and then deleted
                     if inst in node_ids_by_name:
                         running_nodeids.add(node_ids_by_name[inst])
+                        if self.telnet_nodeid == node_ids_by_name[inst]:
+                            self.telnet_proc.terminate()
 
                 waiting_for_nodeids_to_start.difference_update(running_nodeids)
 
