@@ -53,7 +53,11 @@ import argparse
 
 import socket
 import threading
+import multiprocessing
+
 from http.server import BaseHTTPRequestHandler,HTTPServer
+
+import telnetlib
 
 import subprocess
 
@@ -182,7 +186,6 @@ class RequestHandler(BaseHTTPRequestHandler):
 
         content = urllib.parse.parse_qs(self.rfile.read(int(length)))
         hostname = content[b'hostname'][0].decode()
-        print(hostname, 'running')
 
         with self.server.instance_report_cv:
             if not hostname in self.server.instances_reported:
@@ -201,7 +204,6 @@ class RequestHandler(BaseHTTPRequestHandler):
 
         content = urllib.parse.parse_qs(self.rfile.read(int(length)))
         hostname = self.path.split('/')[-1]
-        print(hostname, 'running')
 
         with self.server.instance_report_cv:
             if not hostname in self.server.instances_reported:
@@ -211,6 +213,17 @@ class RequestHandler(BaseHTTPRequestHandler):
 
         self.send_response(200)
         self.end_headers()
+
+def print_telnet_forever(hostname, port):
+    "Open a telnet client to hostname/port, and print its data to stdout until the session closes"
+    telnet = telnetlib.Telnet()
+    telnet.open(hostname, port)
+    data = None
+    while data != b'':
+        data = telnet.read_some()
+        if data != b'':
+            sys.stdout.buffer.write(data)
+            sys.stdout.flush()
 
 class Project:
 
@@ -222,7 +235,7 @@ class Project:
         self.verbose = server.verbose
         self.cached_nodes = None
         self.nodes_waiting_to_start = []
-        self.telnet_nodeid = None
+        self.telnet_procs = {}
 
         # Bind to a local TCP port that will listen for callbacks.
         #
@@ -395,7 +408,7 @@ class Project:
         result = requests.post(project_start_url, auth=self.auth)
         result.raise_for_status()
 
-    def start_nodeid(self, nodeid):
+    def start_nodeid(self, nodeid, print_console=False):
         existing_nodes = self.nodes()
         names_by_node_id = {node['node_id']:node['name'] for node in existing_nodes}
         print(f"Starting {names_by_node_id[nodeid]}...")
@@ -410,18 +423,19 @@ class Project:
             self.nodes_waiting_to_start.remove(node)
 
         # GNS3 only allows console connections from localhost (by default),
-        # so watching the console only works on localhost.
+        # so printing the console only works on localhost.
         hostname = urllib.parse.urlparse(self.url).hostname
-        if hostname == 'localhost':
+        if print_console and hostname == 'localhost':
+            # call self.nodes() to get new node structures that contain the virtual console's port number
             for node in self.nodes():
                 if node['node_id'] == nodeid:
-                    telnet_port = node['console']
-                    cmdline = ['telnet', hostname, str(telnet_port)]
-                    self.telnet_nodeid = nodeid
-                    self.telnet_proc = subprocess.Popen(cmdline)
+                    port = node['console']
+                    self.telnet_procs[node['name']] = multiprocessing.Process(target=print_telnet_forever, daemon=True,
+                                                                              args=(hostname, port))
+                    self.telnet_procs[node['name']].start()
 
-    def start_node(self, node):
-        self.start_nodeid(node['node_id'])
+    def start_node(self, node, print_console=False):
+        self.start_nodeid(node['node_id'], print_console=print_console)
 
     def start_nodes(self, *node_list, wait_for_everything=None):
         """start_nodes(*node_list, wait_for_everything=False)
@@ -481,7 +495,7 @@ class Project:
                 # if the node isn't running but all of its dependencies are, start it
                 if node_id not in running_nodeids and node_id not in waiting_for_nodeids_to_start:
                     if running_nodeids.issuperset([v['node_id'] for v in dependencies]):
-                        self.start_nodeid(node_id)
+                        self.start_nodeid(node_id, print_console=True)
                         waiting_for_nodeids_to_start.add(node_id)
 
         with self.httpd.instance_report_cv:
@@ -496,8 +510,9 @@ class Project:
                     # Same consideration as before if a node was started and then deleted
                     if inst in node_ids_by_name:
                         running_nodeids.add(node_ids_by_name[inst])
-                        if self.telnet_nodeid == node_ids_by_name[inst]:
-                            self.telnet_proc.terminate()
+                    if inst in self.telnet_procs:
+                        self.telnet_procs[inst].terminate()
+                        del self.telnet_procs[inst]
 
                 waiting_for_nodeids_to_start.difference_update(running_nodeids)
 
@@ -509,7 +524,7 @@ class Project:
                             candidate_nodes.add(key)
 
                 for start_node in candidate_nodes:
-                    self.start_nodeid(start_node)
+                    self.start_nodeid(start_node, print_console=True)
                     waiting_for_nodeids_to_start.add(start_node)
 
                 if wait_for_everything:
