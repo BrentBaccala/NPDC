@@ -57,6 +57,7 @@ import multiprocessing
 
 import asyncio
 import websockets
+import types
 
 from http.server import BaseHTTPRequestHandler,HTTPServer
 
@@ -248,8 +249,30 @@ async def async_print_websocket_forever(url):
             sys.stdout.buffer.write(s)
             sys.stdout.flush()
 
+# asyncio.run is only available in Python 3.7+, and Ubuntu 18 ships Python 3.6
+#
+# This routine is from: https://stackoverflow.com/a/55595696/1493790
+
+def run(coro):
+    if sys.version_info >= (3, 7):
+        return asyncio.run(coro)
+
+    # Emulate asyncio.run() on older versions
+
+    # asyncio.run() requires a coroutine, so require it here as well
+    if not isinstance(coro, types.CoroutineType):
+        raise TypeError("run() requires a coroutine object")
+
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
+        asyncio.set_event_loop(None)
+
 def print_websocket_forever(url):
-    asyncio.run(async_print_websocket_forever(url))
+    run(async_print_websocket_forever(url))
 
 class Project:
 
