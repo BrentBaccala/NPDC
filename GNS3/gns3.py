@@ -55,6 +55,9 @@ import socket
 import threading
 import multiprocessing
 
+import asyncio
+import websockets
+
 from http.server import BaseHTTPRequestHandler,HTTPServer
 
 import telnetlib
@@ -224,6 +227,29 @@ def print_telnet_forever(hostname, port):
         if data != b'':
             sys.stdout.buffer.write(data)
             sys.stdout.flush()
+
+# qemu exposes a virtual machine's console via a TELNET server, and GNS3 exposes this service
+# via a websocket URL.  This function opens a connection to this service and prints its data.
+# To avoid a bunch of weird characters at the start of the connection, I took a look at RFC 854
+# and put in some simple code to discard all TELNET commands at the beginning of a byte string.
+#
+# TODO: catch websockets.exceptions.ConnectionClosedOK, which we'll get if the virtual machine
+# is stopped or deleted.
+
+async def async_print_websocket_forever(url):
+    async with websockets.connect(url) as websocket:
+        while True:
+            s = await websocket.recv()
+            while s.startswith(b'\xff'):
+                if any(s.startswith(prefix) for prefix in (b'\xff\xfb', b'\xff\xfc', b'\xff\xfd', b'\xff\xfe')):
+                    s=s[3:]
+                else:
+                    s=s[2:]
+            sys.stdout.buffer.write(s)
+            sys.stdout.flush()
+
+def print_websocket_forever(url):
+    asyncio.run(async_print_websocket_forever(url))
 
 class Project:
 
@@ -422,17 +448,13 @@ class Project:
         if node in self.nodes_waiting_to_start:
             self.nodes_waiting_to_start.remove(node)
 
-        # GNS3 only allows console connections from localhost (by default),
-        # so printing the console only works on localhost.
-        hostname = urllib.parse.urlparse(self.url).hostname
-        if print_console and hostname == 'localhost':
-            # call self.nodes() to get new node structures that contain the virtual console's port number
-            for node in self.nodes():
-                if node['node_id'] == nodeid:
-                    port = node['console']
-                    self.telnet_procs[node['name']] = multiprocessing.Process(target=print_telnet_forever, daemon=True,
-                                                                              args=(hostname, port))
-                    self.telnet_procs[node['name']].start()
+        if print_console:
+            url = "{}/compute/projects/{}/qemu/nodes/{}/console/ws".format(self.server.url, self.project_id, nodeid)
+            url = url.replace('http:', 'ws:')
+            # Make this process a daemon so that it gets killed when the script exists
+            self.telnet_procs[node['name']] = multiprocessing.Process(target=print_websocket_forever, args=(url,), daemon=True)
+            self.telnet_procs[node['name']].start()
+
 
     def start_node(self, node, print_console=False):
         self.start_nodeid(node['node_id'], print_console=print_console)
