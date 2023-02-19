@@ -472,11 +472,14 @@ class Project:
             self.nodes_waiting_to_start.remove(node)
 
         if print_console:
-            url = "{}/compute/projects/{}/qemu/nodes/{}/console/ws".format(self.server.url, self.project_id, nodeid)
-            url = url.replace('http:', 'ws:')
-            # Make this process a daemon so that it gets killed when the script exists
-            self.telnet_procs[node['name']] = multiprocessing.Process(target=print_websocket_forever, args=(url,), daemon=True)
-            self.telnet_procs[node['name']].start()
+            if node.get('console_type', 'telnet') == 'telnet':
+                url = "{}/compute/projects/{}/qemu/nodes/{}/console/ws".format(self.server.url, self.project_id, nodeid)
+                url = url.replace('http:', 'ws:')
+                # Make this process a daemon so that it gets killed when the script exists
+                self.telnet_procs[node['name']] = multiprocessing.Process(target=print_websocket_forever, args=(url,), daemon=True)
+                self.telnet_procs[node['name']].start()
+            else:
+                print(f"{node['name']}: can't print console messages from VNC console")
 
 
     def start_node(self, node, quiet=False):
