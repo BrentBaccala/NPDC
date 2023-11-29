@@ -1,10 +1,9 @@
 #!/usr/bin/python3
 #
-# Script to start a GNS3 Ubuntu virtual machine named "ubuntu" on
-# the existing project "Virtual Network".  These names can be changed
-# with command line options, with also let the user select the Ubuntu
-# release, the virtual memory size, the virtual disk size, and the
-# number of CPUs.
+# Script to start a GNS3 Ubuntu virtual machine named "ubuntu" in the
+# project "ubuntu-test".  These names can be changed with command line
+# options, with also let the user select the Ubuntu release, the
+# virtual memory size, the virtual disk size, and the number of CPUs.
 #
 # It will be configured to accept your ssh keys for ssh access,
 # and a GNU screen session will start as 'ubuntu' running a
