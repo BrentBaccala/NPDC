@@ -472,17 +472,20 @@ class Project:
             self.nodes_waiting_to_start.remove(node)
 
         if print_console:
-            url = "{}/compute/projects/{}/qemu/nodes/{}/console/ws".format(self.server.url, self.project_id, nodeid)
-            url = url.replace('http:', 'ws:')
-            # Make this process a daemon so that it gets killed when the script exists
-            self.telnet_procs[node['name']] = multiprocessing.Process(target=print_websocket_forever, args=(url,), daemon=True)
-            self.telnet_procs[node['name']].start()
+            if node.get('console_type', 'telnet') == 'telnet':
+                url = "{}/compute/projects/{}/qemu/nodes/{}/console/ws".format(self.server.url, self.project_id, nodeid)
+                url = url.replace('http:', 'ws:')
+                # Make this process a daemon so that it gets killed when the script exists
+                self.telnet_procs[node['name']] = multiprocessing.Process(target=print_websocket_forever, args=(url,), daemon=True)
+                self.telnet_procs[node['name']].start()
+            else:
+                print(f"{node['name']}: can't print console messages from VNC console")
 
 
-    def start_node(self, node, print_console=False):
-        self.start_nodeid(node['node_id'], print_console=print_console)
+    def start_node(self, node, quiet=False):
+        self.start_nodeid(node['node_id'], print_console=not quiet)
 
-    def start_nodes(self, *node_list, wait_for_everything=None):
+    def start_nodes(self, *node_list, wait_for_everything=None, quiet=False):
         """start_nodes(*node_list, wait_for_everything=False)
         default node_list is all nodes we've created this session
         wait_for_everything, if True, will wait for all of them to start,
@@ -498,6 +501,9 @@ class Project:
 
         if not node_list:
             node_list = self.nodes_waiting_to_start
+
+        if not wait_for_everything:
+            wait_for_everything = not quiet
 
         # node_list can be either names or node dictionaries
         node_names_to_start = [node['name'] if type(node) == dict else node for node in node_list]
@@ -540,7 +546,7 @@ class Project:
                 # if the node isn't running but all of its dependencies are, start it
                 if node_id not in running_nodeids and node_id not in waiting_for_nodeids_to_start:
                     if running_nodeids.issuperset([v['node_id'] for v in dependencies]):
-                        self.start_nodeid(node_id, print_console=True)
+                        self.start_nodeid(node_id, print_console=not quiet)
                         waiting_for_nodeids_to_start.add(node_id)
 
         with self.httpd.instance_report_cv:
@@ -569,7 +575,7 @@ class Project:
                             candidate_nodes.add(key)
 
                 for start_node in candidate_nodes:
-                    self.start_nodeid(start_node, print_console=True)
+                    self.start_nodeid(start_node, print_console=not quiet)
                     waiting_for_nodeids_to_start.add(start_node)
 
                 if wait_for_everything:
