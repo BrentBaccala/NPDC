@@ -1,0 +1,26 @@
+#!/bin/bash
+
+export AWS_PROFILE=kyle
+
+if [ $# -eq 0 ]; then
+   echo "Usage: $0 HOSTNAME"
+   exit 1
+fi
+
+HOST=$1
+
+if [[ $HOST == *.* ]]; then
+   echo "Don't use FQDN; freesoft.org is implied"
+   exit 1
+fi
+
+aws iam create-user --user-name $HOST-updater
+aws iam tag-user --user-name $HOST-updater --tags Key=FQDN,Value=$HOST.freesoft.org
+aws iam tag-user --user-name $HOST-updater --tags Key=HostedZone,Value=Z08462181NK07JJAPHM5M
+
+aws iam attach-user-policy --user-name $HOST-updater --policy-arn arn:aws:iam::616249160619:policy/UpdateSpecificDNSRecord
+
+json=$(aws iam create-access-key --user-name $HOST-updater --output=json)
+
+echo export AWS_ACCESS_KEY_ID=$(jq -r .AccessKey.AccessKeyId <<< "$json")
+echo export AWS_SECRET_ACCESS_KEY=$(jq -r .AccessKey.SecretAccessKey <<< "$json")

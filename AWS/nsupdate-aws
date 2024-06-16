@@ -1,0 +1,39 @@
+#!/bin/bash
+#
+# Script that can be used with ddclient in place of nsupdate;
+# updates AWS Route 53 registry instead of using RFC 2136.
+#
+# Environment variables that must be set in /etc/default/ddclient:
+#    export AWS_ACCESS_KEY_ID=
+#    export AWS_SECRET_ACCESS_KEY=
+#
+# ddclient configuration:
+#    protocol=nsupdate
+#    login=/usr/share/nsupdate-aws/nsupdate-aws
+#    password=Z08462181NK07JJAPHM5M  (AWS hosted zone identifier)
+
+# We expect $1 to be '-k' and $2 to be the 'password' from the config file, which is the hosted zone identifier
+hostedzoneid=$2
+
+json_array="["
+
+while IFS= read -r line; do
+    if [[ $line == "update add"* ]]; then
+	hostwithdot=$(echo $line | awk '{print $3}')
+	ttl=$(echo $line | awk '{print $4}')
+	recordtype=$(echo $line | awk '{print $5}')
+	ip=$(echo $line | awk '{print $6}')
+	json_object="{\"Name\": \"$hostwithdot\", \"Type\": \"$recordtype\", \"TTL\": $ttl, \
+                      \"ResourceRecords\": [{\"Value\":\"$ip\"}]}"
+	json_array+="{\"Action\": \"UPSERT\", \"ResourceRecordSet\": $json_object}"
+    fi
+done
+
+json_array="${json_array%,}]"
+
+# "exec" here because I want the program's exit code to be returned as the script's exit code
+#     (it's checked by ddclient)
+
+exec aws route53 change-resource-record-sets \
+    --hosted-zone-id $hostedzoneid \
+    --change-batch "{\"Changes\": $json_array}"
