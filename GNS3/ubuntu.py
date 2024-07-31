@@ -82,6 +82,7 @@ GNS3_HOME = '/home/gns3'
 # run a package update.
 
 cloud_images = {
+    24: 'noble-server-cloudimg-amd64.img',
     22: 'ubuntu-22.04-server-cloudimg-amd64.img',
     20: 'ubuntu-20.04-server-cloudimg-amd64.img',
     18: 'ubuntu-18.04-server-cloudimg-amd64.img'
