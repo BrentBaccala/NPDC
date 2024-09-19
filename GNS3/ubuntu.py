@@ -75,6 +75,7 @@ GNS3_HOME = '/home/gns3'
 # https://cloud-images.ubuntu.com/releases/bionic/release/ubuntu-18.04-server-cloudimg-amd64.img
 # https://cloud-images.ubuntu.com/releases/focal/release/ubuntu-20.04-server-cloudimg-amd64.img
 # https://cloud-images.ubuntu.com/releases/jammy/release/ubuntu-22.04-server-cloudimg-amd64.img
+# https://cloud-images.ubuntu.com/releases/noble/release/ubuntu-24.04-server-cloudimg-amd64.img
 #
 # Updated versions are released several times a month.  If you don't have the latest version,
 # don't worry, this file's cloud-init configuration will run a package update, but once the GNS3
@@ -82,7 +83,7 @@ GNS3_HOME = '/home/gns3'
 # run a package update.
 
 cloud_images = {
-    24: 'noble-server-cloudimg-amd64.img',
+    24: 'ubuntu-24.04-server-cloudimg-amd64.img',
     22: 'ubuntu-22.04-server-cloudimg-amd64.img',
     20: 'ubuntu-20.04-server-cloudimg-amd64.img',
     18: 'ubuntu-18.04-server-cloudimg-amd64.img'
