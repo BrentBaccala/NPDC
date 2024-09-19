@@ -674,7 +674,10 @@ class Project:
             genisoimage_command.append(f"{fn}={data_file.name}")
             temporary_files.append(data_file)
 
-        genisoimage_proc = subprocess.Popen(genisoimage_command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        try:
+            genisoimage_proc = subprocess.Popen(genisoimage_command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        except FileNotFoundError as e:
+            raise FileNotFoundError('On Ubuntu (and maybe other Debian-based systems), you should run "apt install genisoimage"') from e
 
         isoimage = genisoimage_proc.stdout.read()
 
@@ -780,7 +783,10 @@ class Project:
             network_config_file.close()
             genisoimage_command.append("network-config={}".format(network_config_file.name))
 
-        genisoimage_proc = subprocess.Popen(genisoimage_command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        try:
+            genisoimage_proc = subprocess.Popen(genisoimage_command, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        except FileNotFoundError as e:
+            raise FileNotFoundError('On Ubuntu (and maybe other Debian-based systems), you should run "apt install genisoimage"') from e
 
         isoimage = genisoimage_proc.stdout.read()
 

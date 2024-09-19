@@ -6,7 +6,10 @@ import os
 import sys
 import gns3
 import requests
-from requests_toolbelt.streaming_iterator import StreamingIterator
+try:
+    from requests_toolbelt.streaming_iterator import StreamingIterator
+except ModuleNotFoundError as e:
+    raise ModuleNotFoundError('On Ubuntu (and maybe other Debian-based systems), you should run "apt install python3-requests-toolbelt"') from e
 
 import argparse
 
@@ -31,7 +34,7 @@ group = parser.add_mutually_exclusive_group()
 group.add_argument('--ls', action="store_true",
                     help='list availabel images')
 group.add_argument('filename', type=str, nargs='?',
-                    help='filename to upload')
+                    help='filename or URL to upload')
 args = parser.parse_args()
 
 gns3_server = gns3.Server(host=args.host)
