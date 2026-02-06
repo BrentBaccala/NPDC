@@ -7,11 +7,19 @@
 #    export AWS_ACCESS_KEY_ID=
 #    export AWS_SECRET_ACCESS_KEY=
 #
-# ddclient configuration:
+# Also, change run_daemon to be "true" in /etc/default/dcclient, and the other two "false",
+# because dhclient never changes our IP address (it's on an AWS private network) and
+# we don't have any PPP interfaces.
+#
+# /etc/ddclient.conf configuration:
 #    protocol=nsupdate
 #    login=/usr/share/nsupdate-aws/nsupdate-aws
 #    password=Z08462181NK07JJAPHM5M  (AWS hosted zone identifier)
-
+#    use=cmd
+#    cmd="/usr/bin/wget -qO- http://169.254.169.254/latest/meta-data/public-ipv4"
+#    ttl=10
+#    FQDN
+#
 # We expect $1 to be '-k' and $2 to be the 'password' from the config file, which is the hosted zone identifier
 hostedzoneid=$2
 

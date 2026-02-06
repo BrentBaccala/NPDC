@@ -1,24 +1,33 @@
 #!/bin/bash
-
-export AWS_PROFILE=kyle
+#
+# You need to specify environment variable AWS_PROFILE
 
 if [ $# -eq 0 ]; then
-   echo "Usage: $0 HOSTNAME"
+   echo "Usage: $0 FQDN"
    exit 1
 fi
 
-HOST=$1
-
-if [[ $HOST == *.* ]]; then
-   echo "Don't use FQDN; freesoft.org is implied"
+if [[ $1 != *.* ]]; then
+   echo "Usage: $0 FQDN"
    exit 1
 fi
+
+HOST=$(echo $1 | cut -d . -f 1)
+DOMAIN=$(echo $1 | cut -d . -f 2-)
+
+echo $HOST
+echo $DOMAIN
+
+id=$(aws route53 list-hosted-zones --output json --query "HostedZones[?Name=='$DOMAIN.']" | jq --raw-output '.[0].Id' | cut -d / -f 3)
 
 aws iam create-user --user-name $HOST-updater
-aws iam tag-user --user-name $HOST-updater --tags Key=FQDN,Value=$HOST.freesoft.org
-aws iam tag-user --user-name $HOST-updater --tags Key=HostedZone,Value=Z08462181NK07JJAPHM5M
+aws iam tag-user --user-name $HOST-updater --tags Key=FQDN,Value=$HOST.$DOMAIN
+aws iam tag-user --user-name $HOST-updater --tags Key=HostedZone,Value=$id
 
-aws iam attach-user-policy --user-name $HOST-updater --policy-arn arn:aws:iam::616249160619:policy/UpdateSpecificDNSRecord
+aws iam put-user-policy --user-name $HOST-updater --policy-name UpdateSpecificDNSRecord --policy-document file://UpdateSpecificDNSRecordPolicy.json
+
+# Don't need this because put-user-policy created an "inline policy"
+# aws iam attach-user-policy --user-name $HOST-updater --policy-arn arn:aws:iam::616249160619:policy/UpdateSpecificDNSRecord
 
 json=$(aws iam create-access-key --user-name $HOST-updater --output=json)
 
