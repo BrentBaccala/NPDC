@@ -22,14 +22,15 @@
 #    - installs the 'bind9' package if it isn't installed
 #    - creates the Bind configuration files to provide
 #      DNS service on the virtual link
-#    - installs the 'isc-dhcp-server' package if it isn't installed
-#    - creates the dhcpd.conf configuration file to provide
+#    - installs the 'kea-dhcp4-server' package if it isn't installed
+#    - creates the Kea DHCP4 configuration file to provide
 #      DHCP service on the virtual link
+#    - installs the 'kea-dhcp-ddns-server' package for dynamic DNS
 #    - turns on IPv4 packet forwarding, if necessary
 #    - creates a bird configuration file, if one doesn't exist,
 #      that listen on the virtual interface for OSPF
 #      routing annoucements
-#    - installs the 'bird' package, if it isn't installed
+#    - installs the 'bird2' package, if it isn't installed
 #
 # There are two important environment variables you can set:
 #
@@ -50,11 +51,11 @@
 #    - deluser --remove-home gns3
 #    - ./install-gns3.sh remove-service
 #    - ./install-gns3.sh disable-nat
-#    - apt purge gns3-server dynamips makepasswd genisoimage bind9 isc-dhcp-server bird
+#    - apt purge gns3-server dynamips makepasswd genisoimage bind9 kea-dhcp4-server kea-dhcp-ddns-server bird2
 #    - add-apt-repository --remove ppa:gns3
 #
 # Note that the 'apt purge' step will remove all configuration files associated with
-# the nameserver (bind9), the DHCP server (isc-dhcp-server) and the OSPF daemon (bird).
+# the nameserver (bind9), the DHCP server (kea-dhcp4-server/kea-dhcp-ddns-server) and the OSPF daemon (bird2).
 # Any local changes you've made to these files will be deleted by this step.
 
 HOSTNAME=$(hostname)
@@ -277,8 +278,8 @@ if ! systemctl --all --type service | grep -q veth.service; then
 [Unit]
 Description=Configure virtual ethernet for GNS3
 After=network.target
-# isc-dhcp-server won't bind to interfaces that don't exist when it starts
-Before=isc-dhcp-server.service
+# kea-dhcp4-server won't bind to interfaces that don't exist when it starts
+Before=kea-dhcp4-server.service
 # If bird has no interfaces when it starts, and no router id configured, it will exit with failure
 Before=bird.service
 
@@ -334,7 +335,6 @@ options {
 	forward only;
 	forwarders { 127.0.0.53; };
 
-	dnssec-enable no;
 	dnssec-validation no;
 
 	listen-on { $FIRST_HOST; };
@@ -416,62 +416,129 @@ else
     echo "/var/lib/bind/$ZERO_HOST.zone already exists"
 fi
 
-# DHCP server: 120 second lease time because I'm tearing down and
-# rebulding the virtual network so often.
-#
-# I tried doing this with a 10 second lease time, but that causes
-# OSPF route flaps (either bird or frr) on the virtual nodes.
-
-if [ ! -r /etc/dhcp/dhcpd.conf ]; then
-    mkdir -p /etc/dhcp
-    tee -a /etc/dhcp/dhcpd.conf >/dev/null <<EOF
-ddns-updates on;
-ddns-update-style standard;
-update-optimization off;
-authoritative;
-
-include "/etc/dhcp/rndc.key";
-
-allow unknown-clients;
-default-lease-time 120;
-max-lease-time 120;
-log-facility local7;
-
-zone $DOMAIN. { key rndc-key; }
-zone $REVERSE_DOMAIN. { primary $HOSTNAME.$DOMAIN; key rndc-key; }
-
-subnet $ZERO_HOST netmask 255.255.255.0 {
- range $FIRST_DHCP $LAST_DHCP;
- option subnet-mask 255.255.255.0;
- option domain-name-servers $FIRST_HOST;
- option domain-name "$DOMAIN";
- option routers $FIRST_HOST;
- option broadcast-address $BROADCAST;
-}
-EOF
-else
-    echo "/etc/dhcp/dhcpd.conf already exists"
-fi
+# Install bind9 first so we have the rndc.key for Kea DDNS configuration
 
 need_pkg bind9
-need_pkg isc-dhcp-server
 
-# We had to wait bind to be installed for this to work, since
+# We had to wait for bind to be installed for this to work, since
 # otherwise we might not have a 'bind' user, and yes, the
 # files need to be writable by bind to allow dynamic updates.
 
 chown bind.bind /var/lib/bind/$DOMAIN.zone
 chown bind.bind /var/lib/bind/$ZERO_HOST.zone
 
-# When the bind package installed, it created an access key.
-# dhcpd needs it to update DNS entries.  Copy the file
-# to a location and permission accessible to dhcpd.
-#
-# dhcpd can't read the key if its permissions are 440.
+# Extract the TSIG key from bind's rndc.key for use in Kea DDNS configuration
 
-cp /etc/bind/rndc.key /etc/dhcp/
-chmod 444 /etc/dhcp/rndc.key
-chown dhcpd.dhcpd /etc/dhcp/rndc.key
+RNDC_ALGORITHM=$(grep algorithm /etc/bind/rndc.key | sed 's/.*algorithm //;s/;.*//' | tr -d ' ')
+RNDC_SECRET=$(grep secret /etc/bind/rndc.key | sed 's/.*secret "//;s/".*//')
+# Convert algorithm name to Kea format (e.g., hmac-sha256 -> HMAC-SHA256)
+RNDC_ALGORITHM_UPPER=$(echo "$RNDC_ALGORITHM" | tr 'a-z' 'A-Z')
+
+# DHCP server: 120 second lease time because I'm tearing down and
+# rebuilding the virtual network so often.
+#
+# I tried doing this with a 10 second lease time, but that causes
+# OSPF route flaps (either bird or frr) on the virtual nodes.
+#
+# Kea DHCP4 replaces isc-dhcp-server on Ubuntu 24.04.
+# Dynamic DNS updates are handled by the kea-dhcp-ddns (D2) service.
+
+if [ ! -r /etc/kea/kea-dhcp4.conf ]; then
+    mkdir -p /etc/kea
+    tee /etc/kea/kea-dhcp4.conf >/dev/null <<EOF
+{
+    "Dhcp4": {
+        "interfaces-config": {
+            "interfaces": [ "veth-host" ]
+        },
+        "valid-lifetime": 120,
+        "max-valid-lifetime": 120,
+        "authoritative": true,
+        "dhcp-ddns": {
+            "enable-updates": true
+        },
+        "ddns-send-updates": true,
+        "ddns-override-no-update": true,
+        "ddns-override-client-update": true,
+        "ddns-replace-client-name": "always",
+        "ddns-qualifying-suffix": "$DOMAIN.",
+        "ddns-update-on-renew": true,
+        "subnet4": [
+            {
+                "id": 1,
+                "subnet": "$ZERO_HOST/$MASKLEN",
+                "pools": [ { "pool": "$FIRST_DHCP - $LAST_DHCP" } ],
+                "option-data": [
+                    { "name": "subnet-mask", "data": "255.255.255.0" },
+                    { "name": "domain-name-servers", "data": "$FIRST_HOST" },
+                    { "name": "domain-name", "data": "$DOMAIN" },
+                    { "name": "routers", "data": "$FIRST_HOST" },
+                    { "name": "broadcast-address", "data": "$BROADCAST" }
+                ]
+            }
+        ],
+        "loggers": [
+            {
+                "name": "kea-dhcp4",
+                "output-options": [
+                    { "output": "syslog:local7" }
+                ],
+                "severity": "INFO"
+            }
+        ]
+    }
+}
+EOF
+else
+    echo "/etc/kea/kea-dhcp4.conf already exists"
+fi
+
+if [ ! -r /etc/kea/kea-dhcp-ddns.conf ]; then
+    mkdir -p /etc/kea
+    tee /etc/kea/kea-dhcp-ddns.conf >/dev/null <<EOF
+{
+    "DhcpDdns": {
+        "ip-address": "127.0.0.1",
+        "port": 53001,
+        "dns-server-timeout": 1000,
+        "tsig-keys": [
+            {
+                "name": "rndc-key",
+                "algorithm": "$RNDC_ALGORITHM_UPPER",
+                "secret": "$RNDC_SECRET"
+            }
+        ],
+        "forward-ddns": {
+            "ddns-domains": [
+                {
+                    "name": "$DOMAIN.",
+                    "key-name": "rndc-key",
+                    "dns-servers": [
+                        { "ip-address": "$FIRST_HOST", "port": 53 }
+                    ]
+                }
+            ]
+        },
+        "reverse-ddns": {
+            "ddns-domains": [
+                {
+                    "name": "$REVERSE_DOMAIN.",
+                    "key-name": "rndc-key",
+                    "dns-servers": [
+                        { "ip-address": "$FIRST_HOST", "port": 53 }
+                    ]
+                }
+            ]
+        }
+    }
+}
+EOF
+else
+    echo "/etc/kea/kea-dhcp-ddns.conf already exists"
+fi
+
+need_pkg kea-dhcp4-server
+need_pkg kea-dhcp-ddns-server
 
 # We need packet forwarding turned on, otherwise the virtual machines
 # won't be able to access the Internet.
@@ -491,8 +558,8 @@ fi
 
 if [ ! -r /etc/bird/bird.conf ]; then
     mkdir -p /etc/bird
-    tee -a /etc/bird/bird.conf >/dev/null <<EOF
-# This is a minimalist bird configuration that listens for OSPF annoucements
+    tee /etc/bird/bird.conf >/dev/null <<EOF
+# This is a minimalist BIRD 2 configuration that listens for OSPF annoucements
 # on the virtual link used by GNS3 virtual networks.
 #
 # The Device protocol is not a real routing protocol. It doesn't generate any
@@ -508,25 +575,29 @@ protocol device {
 protocol kernel {
 	metric 64;	# Use explicit kernel route metric to avoid collisions
 			# with non-BIRD routes in the kernel routing table
-	import none;
-	export all;	# Actually insert routes into the kernel routing table
+	ipv4 {
+		import none;
+		export all;	# Actually insert routes into the kernel routing table
+	};
 }
 
-protocol ospf OSPF {
+protocol ospf v2 OSPF {
 	area 0.0.0.0 {
 		interface "veth-host" {
 			  cost 10;
 		};
 	};
-	import all;
-	export none;
+	ipv4 {
+		import all;
+		export none;
+	};
 }
 EOF
 else
     echo "'/etc/bird/bird.conf' already exists"
 fi
 
-need_pkg bird
+need_pkg bird2
 systemctl enable bird
 systemctl start bird
 
