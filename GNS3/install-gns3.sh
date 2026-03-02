@@ -429,8 +429,8 @@ need_pkg bind9
 # otherwise we might not have a 'bind' user, and yes, the
 # files need to be writable by bind to allow dynamic updates.
 
-chown bind.bind /var/lib/bind/$DOMAIN.zone
-chown bind.bind /var/lib/bind/$ZERO_HOST.zone
+chown bind:bind /var/lib/bind/$DOMAIN.zone
+chown bind:bind /var/lib/bind/$ZERO_HOST.zone
 
 # Extract the TSIG key from bind's rndc.key for use in Kea DDNS configuration
 
@@ -465,7 +465,7 @@ if [ ! -r /etc/kea/kea-dhcp4.conf ]; then
         "ddns-send-updates": true,
         "ddns-override-no-update": true,
         "ddns-override-client-update": true,
-        "ddns-replace-client-name": "always",
+        "ddns-replace-client-name": "when-not-present",
         "ddns-qualifying-suffix": "$DOMAIN.",
         "ddns-update-on-renew": true,
         "subnet4": [
@@ -485,7 +485,7 @@ if [ ! -r /etc/kea/kea-dhcp4.conf ]; then
         "loggers": [
             {
                 "name": "kea-dhcp4",
-                "output-options": [
+                "output_options": [
                     { "output": "syslog:local7" }
                 ],
                 "severity": "INFO"
