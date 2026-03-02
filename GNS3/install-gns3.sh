@@ -214,6 +214,11 @@ if ! id -u gns3 >/dev/null 2>&1; then
 
     loginctl enable-linger gns3
 
+    # Start the user manager so systemctl --user works immediately,
+    # even if loginctl couldn't notify logind via D-Bus.
+    GNS3_UID=$(id -u gns3)
+    systemctl start user@${GNS3_UID}.service
+
     # This is for convenience when su'ing to gns3.  It makes systemctl --user work.
 
     echo 'export XDG_RUNTIME_DIR=/run/user/$(id -u)' | su gns3 -c "cat >>/home/gns3/.bashrc"
@@ -249,8 +254,8 @@ EOF
     # Requesting a login shell doesn't work, either, because .bashrc starts with
     # a check for non-interactive invocation and does nothing if so.
 
-    su gns3 -c "env XDG_RUNTIME_DIR=/run/user/$(id -u gns3) systemctl --user enable gns3"
-    su gns3 -c "env XDG_RUNTIME_DIR=/run/user/$(id -u gns3) systemctl --user start gns3"
+    su gns3 -c "env XDG_RUNTIME_DIR=/run/user/$GNS3_UID systemctl --user enable gns3"
+    su gns3 -c "env XDG_RUNTIME_DIR=/run/user/$GNS3_UID systemctl --user start gns3"
 else
     echo "user 'gns3' already exists"
     GNS3_PASSWORD=$(grep password /home/gns3/.config/GNS3/2.2/gns3_server.conf | cut -d = -f 2)
