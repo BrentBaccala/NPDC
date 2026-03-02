@@ -77,6 +77,8 @@ if systemctl --all --type service | grep -q veth.service; then
 	VETH_DOMAIN=$(grep 'set-domain' /etc/systemd/system/veth.service | sed 's/.*=//')
     fi
     VETH_SUBNET=$(grep 'ip addr add' /etc/systemd/system/veth.service | sed -E 's|.* ([.0-9]*/[0-9]*).*|\1|')
+    # Normalize host IP to network address (10.242.17.1/24 -> 10.242.17.0/24)
+    VETH_SUBNET=$(echo $VETH_SUBNET | sed -E 's/\.[0-9]+\//\.0\//')
 
     DOMAIN="${DOMAIN:-$VETH_DOMAIN}"
     SUBNET="${SUBNET:-$VETH_SUBNET}"
