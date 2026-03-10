@@ -269,16 +269,23 @@ if ! systemctl --all --type service | grep -q veth.service; then
     # Routed configuration
 
     if which resolvectl >& /dev/null; then
-	# Ubuntu 20.04 LTS
+	# Ubuntu 20.04 LTS and later (22.04, 24.04)
 	ADD_DNS_COMMAND="ExecStart=/usr/bin/resolvectl dns veth-host $FIRST_HOST"
 	ADD_DOMAIN_COMMAND="ExecStart=/usr/bin/resolvectl domain veth-host $DOMAIN"
+	# Without this, systemd-resolved sends all DNS queries to BIND on veth-host
+	# (because +DefaultRoute is the default). BIND can't resolve external names,
+	# so queries like jammy-300.freesoft.org hang for ~10 seconds before timing out.
+	# Setting default-route to no ensures only .samsung queries go to BIND.
+	ADD_DEFAULT_ROUTE_COMMAND="ExecStart=/usr/bin/resolvectl default-route veth-host no"
     elif which systemd-resolve >& /dev/null; then
 	# Ubuntu 18.04 LTS
 	ADD_DNS_COMMAND="ExecStart=/usr/bin/systemd-resolve --interface=veth-host --set-dns=$FIRST_HOST"
 	ADD_DOMAIN_COMMAND="ExecStart=/usr/bin/systemd-resolve --interface=veth-host --set-domain=$DOMAIN"
+	ADD_DEFAULT_ROUTE_COMMAND=""
     else
 	ADD_DNS_COMMAND=""
 	ADD_DOMAIN_COMMAND=""
+	ADD_DEFAULT_ROUTE_COMMAND=""
 	echo "Neither resolvectl nor systemd-resolve available; veth service won't configure DNS"
     fi
     tee /etc/systemd/system/veth.service >/dev/null <<EOF
@@ -300,6 +307,7 @@ ExecStart=/sbin/ip addr add $FIRST_HOST/$MASKLEN broadcast $BROADCAST dev veth-h
 ExecStart=/sbin/ethtool -K veth-host tx off
 $ADD_DNS_COMMAND
 $ADD_DOMAIN_COMMAND
+$ADD_DEFAULT_ROUTE_COMMAND
 ExecStop=/sbin/ip link del dev veth
 
 [Install]
