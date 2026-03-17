@@ -583,6 +583,26 @@ fi
 need_pkg kea-dhcp4-server
 need_pkg kea-dhcp-ddns-server
 
+# Check for port 67 conflict with libvirt's dnsmasq.
+# Libvirt's dnsmasq binds 0.0.0.0:67 with SO_BINDTODEVICE, but kea's
+# fallback socket binds without SO_BINDTODEVICE, and the kernel sees
+# a conflict.  See ~/project/docs/gns3-libvirt-dhcp-conflict.md
+if which virsh >/dev/null 2>&1 && virsh net-info default >/dev/null 2>&1; then
+    if virsh net-dumpxml default 2>/dev/null | grep -q '<dhcp>'; then
+	echo
+	echo "WARNING: libvirt's default network has DHCP enabled."
+	echo "This conflicts with kea-dhcp4-server on port 67."
+	echo "To fix, either disable DHCP on the libvirt default network:"
+	echo "  virsh net-destroy default"
+	echo "  virsh net-edit default   # remove the <dhcp>...</dhcp> block"
+	echo "  virsh net-start default"
+	echo "Or disable the default network entirely:"
+	echo "  virsh net-destroy default"
+	echo "  virsh net-autostart default --disable"
+	echo
+    fi
+fi
+
 # We need packet forwarding turned on, otherwise the virtual machines
 # won't be able to access the Internet.
 
