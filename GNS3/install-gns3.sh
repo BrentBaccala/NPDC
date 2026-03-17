@@ -122,7 +122,7 @@ else
 fi
 
 function need_ppa() {
-    if find /etc/apt/ -name *.list | xargs cat | grep -v '^#' | grep $1/ppa >/dev/null; then
+    if find /etc/apt/ \( -name '*.list' -o -name '*.sources' \) | xargs cat 2>/dev/null | grep -v '^#' | grep $1/ppa >/dev/null; then
 	echo "PPA '$1' already added"
     else
 	add-apt-repository -y ppa:$1
