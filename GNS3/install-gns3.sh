@@ -58,10 +58,34 @@
 # the nameserver (bind9), the DHCP server (kea-dhcp4-server/kea-dhcp-ddns-server) and the OSPF daemon (bird2).
 # Any local changes you've made to these files will be deleted by this step.
 
+if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
+    echo "Usage: $0 [COMMAND]"
+    echo
+    echo "With no arguments, installs and configures a GNS3 server with"
+    echo "a virtual network (veth), DHCP (kea), DNS (bind9), and OSPF (bird2)."
+    echo "Safe to re-run — skips components that are already installed."
+    echo
+    echo "Commands:"
+    echo "  enable-nat       Add iptables MASQUERADE rule for GNS3 subnet"
+    echo "  disable-nat      Remove iptables MASQUERADE rule"
+    echo "  remove-service   Remove the veth virtual link service"
+    echo
+    echo "Environment variables:"
+    echo "  SUBNET           Virtual link subnet (default: random /24 in 10.0.0.0/8)"
+    echo "  DOMAIN           Virtual link DNS domain (default: hostname)"
+    exit 0
+fi
+
 HOSTNAME=$(hostname)
 
 if [ $EUID != 0 ]; then
     echo "You must run this command as root."
+    exit 1
+fi
+
+if [ -n "$1" ] && [ "$1" != "enable-nat" ] && [ "$1" != "disable-nat" ] && [ "$1" != "remove-service" ]; then
+    echo "Unknown command: $1"
+    echo "Run '$0 --help' for usage."
     exit 1
 fi
 
