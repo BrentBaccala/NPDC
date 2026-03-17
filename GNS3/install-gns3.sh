@@ -173,6 +173,10 @@ if [ "$1" = "enable-nat" ]; then
 	# system that I don't do it automatically.
 	if dpkg -s iptables-persistent >/dev/null 2>&1; then
 	    dpkg-reconfigure iptables-persistent
+	else
+	    echo "WARNING: iptables-persistent is not installed."
+	    echo "The NAT rule will not persist across reboots."
+	    echo "Install it with: apt install iptables-persistent"
 	fi
     fi
     exit 0
