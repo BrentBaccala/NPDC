@@ -74,13 +74,7 @@ if args.reboot:
         print(f"Node {args.name} not found")
         sys.exit(1)
     print(f"Rebooting {args.name} ...")
-    # GNS3's reload_node sends QEMU 'system_reset', which triggers a
-    # reboot inside the VM.  But we use -no-reboot (to halt on crash
-    # instead of reboot-looping), so system_reset just halts the VM
-    # without restarting it.  Use explicit stop+start instead.
-    gns3_project.stop_node(node)
-    time.sleep(2)
-    gns3_project.start_node(node, quiet=True)
+    gns3_project.reload_node(node)
     print(f"Node {args.name} rebooted")
     sys.exit(0)
 
@@ -127,9 +121,14 @@ if not ssh_keys and not args.no_ssh_setup:
 #
 # -M q35: Required for Hurd with larger RAM configurations (>4GB).
 #         Safe to use unconditionally.
-# -no-reboot: Halt instead of rebooting on crash, so we can inspect state.
+#
+# Do NOT use -no-reboot here.  It prevents GNS3's reload (QEMU
+# system_reset) from working, so --reboot would stop the VM without
+# restarting it.  The -no-reboot flag came from gnumach's test harness
+# (gnumach/tests/user-qemu.mk) where it makes sense for automated
+# tests, but not for an interactive VM.
 
-qemu_options = "-M q35 -no-reboot"
+qemu_options = "-M q35"
 
 if args.smp > 1:
     qemu_options += f" -smp {args.smp}"
