@@ -485,6 +485,20 @@ class Project:
     def start_node(self, node, quiet=False):
         self.start_nodeid(node['node_id'], print_console=not quiet)
 
+    def stop_node(self, node):
+        """Stop a running node."""
+        nodeid = node['node_id'] if isinstance(node, dict) else node
+        url = "{}/nodes/{}/stop".format(self.url, nodeid)
+        result = requests.post(url, auth=self.auth)
+        result.raise_for_status()
+
+    def reload_node(self, node):
+        """Reboot a running node (hard reset)."""
+        nodeid = node['node_id'] if isinstance(node, dict) else node
+        url = "{}/nodes/{}/reload".format(self.url, nodeid)
+        result = requests.post(url, auth=self.auth)
+        result.raise_for_status()
+
     def start_nodes(self, *node_list, wait_for_everything=None, quiet=False):
         """start_nodes(*node_list, wait_for_everything=False)
         default node_list is all nodes we've created this session

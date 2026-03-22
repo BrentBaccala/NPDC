@@ -57,12 +57,26 @@ parser.add_argument('--no-network', action='store_true',
                     help='do not create Internet cloud and switch')
 parser.add_argument('--no-ssh-setup', action='store_true',
                     help='skip SSH key installation')
+parser.add_argument('--reboot', action='store_true',
+                    help='reboot an existing node (hard reset)')
 
 args = parser.parse_args()
 
 # Open the GNS3 server and project
 
 gns3_server, gns3_project = gns3.open_project_with_standard_options(args)
+
+# Handle --reboot: reboot an existing node and exit
+
+if args.reboot:
+    node = gns3_project.node(args.name)
+    if not node:
+        print(f"Node {args.name} not found")
+        sys.exit(1)
+    print(f"Rebooting {args.name} ...")
+    gns3_project.reload_node(node)
+    print(f"Node {args.name} rebooted")
+    sys.exit(0)
 
 # Find the Hurd image
 
