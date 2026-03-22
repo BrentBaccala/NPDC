@@ -74,7 +74,9 @@ if args.reboot:
         print(f"Node {args.name} not found")
         sys.exit(1)
     print(f"Rebooting {args.name} ...")
-    gns3_project.reload_node(node)
+    gns3_project.stop_node(node)
+    time.sleep(2)
+    gns3_project.start_node(node, quiet=True)
     print(f"Node {args.name} rebooted")
     sys.exit(0)
 
