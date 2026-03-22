@@ -292,13 +292,11 @@ if lang and not args.no_network:
         lang_base = lang
         lang_encoding = 'UTF-8'
 
-    print(f"Installing locale {lang} ...")
-    # Install the locales package (may already be installed)
-    monitor_cmd(monitor, 'apt-get install -y locales 2>/dev/null')
-    time.sleep(30)
-    # Generate the locale directly with localedef (no locale.gen editing needed)
-    monitor_cmd(monitor, f'localedef -i {lang_base} -c -f {lang_encoding} {lang}')
-    time.sleep(5)
+    print(f"Installing locale {lang} (this takes a couple minutes) ...")
+    # Chain all commands with && so the shell sequences them.
+    # We wait long enough for apt-get update + install + localedef to finish.
+    monitor_cmd(monitor, f'apt-get update -qq 2>/dev/null && apt-get install -y -qq locales 2>/dev/null && localedef -i {lang_base} -c -f {lang_encoding} {lang} && echo LOCALE-DONE')
+    time.sleep(120)
 
 # Get IP address
 print("Getting IP address ...")
