@@ -74,6 +74,10 @@ if args.reboot:
         print(f"Node {args.name} not found")
         sys.exit(1)
     print(f"Rebooting {args.name} ...")
+    # GNS3's reload_node sends QEMU 'system_reset', which triggers a
+    # reboot inside the VM.  But we use -no-reboot (to halt on crash
+    # instead of reboot-looping), so system_reset just halts the VM
+    # without restarting it.  Use explicit stop+start instead.
     gns3_project.stop_node(node)
     time.sleep(2)
     gns3_project.start_node(node, quiet=True)
