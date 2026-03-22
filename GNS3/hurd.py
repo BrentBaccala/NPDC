@@ -277,6 +277,29 @@ time.sleep(1)
 monitor_cmd(monitor, 'wc -l /root/.ssh/authorized_keys')
 time.sleep(2)
 
+# Install locale to suppress SSH locale warnings.
+# We detect the user's LANG and install that locale on the Hurd VM.
+# This requires network access (apt-get install locales), so we do it
+# best-effort and warn if it fails.
+
+lang = os.environ.get('LANG', '')
+if lang and not args.no_network:
+    # Parse LANG (e.g. "en_US.UTF-8") into localedef arguments
+    # localedef -i en_US -c -f UTF-8 en_US.UTF-8
+    if '.' in lang:
+        lang_base, lang_encoding = lang.split('.', 1)
+    else:
+        lang_base = lang
+        lang_encoding = 'UTF-8'
+
+    print(f"Installing locale {lang} ...")
+    # Install the locales package (may already be installed)
+    monitor_cmd(monitor, 'apt-get install -y locales 2>/dev/null')
+    time.sleep(30)
+    # Generate the locale directly with localedef (no locale.gen editing needed)
+    monitor_cmd(monitor, f'localedef -i {lang_base} -c -f {lang_encoding} {lang}')
+    time.sleep(5)
+
 # Get IP address
 print("Getting IP address ...")
 monitor_cmd(monitor, 'ifconfig /dev/eth0')
