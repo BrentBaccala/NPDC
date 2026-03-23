@@ -155,6 +155,9 @@ properties = {
 
 config = {"console_type": "vnc"}
 
+config["x"] = 300
+config["y"] = 0
+
 hurd_node = gns3_project.create_raw_qemu_node(args.name, image,
                                                 properties=properties,
                                                 config=config)
