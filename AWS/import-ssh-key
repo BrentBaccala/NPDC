@@ -1,0 +1,124 @@
+#!/usr/bin/env bash
+#
+# import-ssh-key — import an SSH *public* key into EC2 as a key pair, so
+# the agent can launch instances with --key-name and SSH into them.
+#
+# Flags:
+#   --profile=P      standard AWS CLI profile supplying YOUR admin creds that
+#                    do the work (passed straight through to `aws --profile`).
+#                    Omit to use the default profile / AWS_PROFILE / env vars.
+#   --key-name=K     the key-pair name. Defaults to the comment on the public
+#                    key (e.g. "claude@samsung").
+#   --region=R[,...] region(s) to import into. Key pairs are REGIONAL.
+#   --pubkey "..."   the key text, instead of a file path.
+#   --replace        overwrite an existing key pair of the same name.
+#   --delete         remove the key pair.
+#
+# The agent's ~/.ssh is mode 700, so your user can't read its *.pub directly.
+# Provide the public key as a readable file path OR with --pubkey "...".
+# (Have the agent `cat ~/.ssh/id_ed25519.pub`, or copy it where you can read.)
+#
+# Usage:
+#   ./import-ssh-key [--profile=P] PUBKEY_FILE          # name from key comment
+#   ./import-ssh-key [--profile=P] --key-name=K PUBKEY_FILE
+#   ./import-ssh-key [--profile=P] --pubkey "ssh-ed25519 AAAA... claude@samsung"
+#   ./import-ssh-key [--profile=P] --key-name=K --region=us-east-1 --delete
+#
+set -euo pipefail
+
+PROFILE=""
+KEY_NAME=""
+REGIONS="us-east-1"
+PUBKEY_FILE=""
+PUBKEY_STR=""
+REPLACE=""
+ACTION="import"
+
+usage() { sed -n '2,25p' "$0" | sed 's/^# \{0,1\}//'; }
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --profile=*)   PROFILE="${1#*=}"; shift;;
+    --profile)     PROFILE="${2:?}"; shift 2;;
+    --key-name=*)  KEY_NAME="${1#*=}"; shift;;
+    --key-name)    KEY_NAME="${2:?}"; shift 2;;
+    --region=*)    REGIONS="${1#*=}"; shift;;
+    --region)      REGIONS="${2:?}"; shift 2;;
+    --pubkey=*)    PUBKEY_STR="${1#*=}"; shift;;
+    --pubkey)      PUBKEY_STR="${2:?}"; shift 2;;
+    --replace)     REPLACE=1; shift;;
+    --delete)      ACTION="delete"; shift;;
+    -h|--help)     usage; exit 0;;
+    -*)            echo "unknown option: $1" >&2; usage; exit 1;;
+    *)             PUBKEY_FILE="$1"; shift;;
+  esac
+done
+
+AWS=(aws)
+[[ -n "$PROFILE" ]] && AWS+=(--profile "$PROFILE")
+
+# key-pair name: explicit --key-name, else (import mode) the comment on the
+# public key, resolved below once the key is read.
+
+# --------------------------------------------------------------- delete mode
+if [[ "$ACTION" == "delete" ]]; then
+  [[ -n "$KEY_NAME" ]] || { echo "error: --delete needs --key-name" >&2; exit 1; }
+  IFS=',' read -ra RLIST <<< "$REGIONS"
+  for r in "${RLIST[@]}"; do
+    echo "Deleting key pair '$KEY_NAME' in $r ..." >&2
+    "${AWS[@]}" --region "$r" ec2 delete-key-pair --key-name "$KEY_NAME" >/dev/null || true
+  done
+  echo "Done." >&2
+  exit 0
+fi
+
+# --------------------------------------------------------------- get the key
+if [[ -n "$PUBKEY_STR" ]]; then
+  MATERIAL="$PUBKEY_STR"
+elif [[ -n "$PUBKEY_FILE" ]]; then
+  [[ -r "$PUBKEY_FILE" ]] || { echo "error: cannot read '$PUBKEY_FILE'" >&2; exit 1; }
+  MATERIAL="$(cat "$PUBKEY_FILE")"
+else
+  echo "error: provide a public-key file path or --pubkey \"...\"" >&2
+  usage; exit 1
+fi
+
+# sanity-check it's a public key, not a private one
+case "$MATERIAL" in
+  ssh-ed25519*|ssh-rsa*|ecdsa-sha2-*|ssh-dss*) : ;;
+  *-----BEGIN*PRIVATE*) echo "error: that looks like a PRIVATE key — never import that. Use the .pub file." >&2; exit 1;;
+  *) echo "error: that does not look like an OpenSSH public key" >&2; exit 1;;
+esac
+
+# default the key-pair name to the comment field on the key (e.g. claude@samsung)
+if [[ -z "$KEY_NAME" ]]; then
+  KEY_NAME="$(awk '{print $3}' <<< "$MATERIAL")"
+  [[ -n "$KEY_NAME" ]] || { echo "error: key has no comment to name it after — pass --key-name" >&2; exit 1; }
+fi
+
+# --------------------------------------------------------------- import
+TMP="$(mktemp)"; trap 'rm -f "$TMP"' EXIT
+printf '%s\n' "$MATERIAL" > "$TMP"
+
+IFS=',' read -ra RLIST <<< "$REGIONS"
+for r in "${RLIST[@]}"; do
+  if "${AWS[@]}" --region "$r" ec2 describe-key-pairs --key-names "$KEY_NAME" >/dev/null 2>&1; then
+    if [[ -n "$REPLACE" ]]; then
+      echo "Replacing existing key pair '$KEY_NAME' in $r ..." >&2
+      "${AWS[@]}" --region "$r" ec2 delete-key-pair --key-name "$KEY_NAME" >/dev/null
+    else
+      echo "Key pair '$KEY_NAME' already exists in $r — skipping (use --replace to overwrite)." >&2
+      continue
+    fi
+  fi
+  echo "Importing '$KEY_NAME' into $r ..." >&2
+  fp="$("${AWS[@]}" --region "$r" ec2 import-key-pair \
+        --key-name "$KEY_NAME" \
+        --public-key-material "fileb://$TMP" \
+        --query KeyFingerprint --output text)"
+  echo "  imported, fingerprint: $fp"
+done
+
+echo
+echo "The agent launches with this key by adding:  --key-name $KEY_NAME"
+echo "  (key pairs are regional; it must launch in: $REGIONS)"

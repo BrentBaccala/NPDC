@@ -1,0 +1,320 @@
+#!/usr/bin/env bash
+#
+# create-ec2-role — provision a tag-scoped, assumable EC2 role for an
+# autonomous agent (Claude), and emit the ~/.aws config it needs.
+#
+# Flags:
+#   --name=NAME      the agent identity being created (default: claude).
+#                    Drives the IAM resource names, the owner tag, and the
+#                    [profile NAME] block in the emitted config.
+#   --profile=P      standard AWS CLI profile supplying YOUR admin creds that
+#                    do the work (passed straight through to `aws --profile`).
+#                    Omit to use the default profile / AWS_PROFILE / env vars.
+#   --region=R       CLI default region for the emitted config (NOT a limit).
+#   --new-key        rotate the base user's access key on a re-run.
+#   --save[=DIR]     also write the config/credentials to files (DIR, or the
+#                    current dir if no DIR). Default: print to stdout only.
+#   --delete         tear down everything for --name.
+#
+# The target account ID is discovered at runtime (sts:get-caller-identity) —
+# never hard-wired.
+#
+# What it builds, for --name=NAME:
+#   policy  NAME-ec2-owner   EC2 ABAC: launch instances tagged owner=NAME, and
+#                            start/stop/reboot/terminate/modify ONLY instances
+#                            carrying owner=NAME. Describe* unconditional. No
+#                            region or instance-type limit.
+#   user    NAME-base        Assume-only base user; its sole permission is
+#                            sts:AssumeRole on the role below.
+#   role    NAME-ec2         Has the policy above; trusts NAME-base; 12h max.
+#
+# Output: the [profile NAME] and [NAME-base] blocks are printed to stdout.
+# With --save they are also written to NAME.config / NAME.credentials.
+#
+# Usage:
+#   ./create-ec2-role [--name=NAME] [--profile=P] [--region=R] [--save[=DIR]]
+#   ./create-ec2-role [--name=NAME] [--profile=P] --delete
+#
+set -euo pipefail
+
+NAME="claude"              # the agent identity; override with --name
+PROFILE=""
+REGION="us-east-1"          # CLI default only; NOT an IAM restriction
+ACTION="create"
+NEW_KEY=""
+SAVE=""                     # empty = stdout only; "--save" sets it to a dir
+
+usage() { sed -n '2,37p' "$0" | sed 's/^# \{0,1\}//'; }
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --name=*)     NAME="${1#*=}"; shift;;
+    --name)       NAME="${2:?}"; shift 2;;
+    --profile=*)  PROFILE="${1#*=}"; shift;;
+    --profile)    PROFILE="${2:?}"; shift 2;;
+    --region=*)   REGION="${1#*=}"; shift;;
+    --region)     REGION="${2:?}"; shift 2;;
+    --new-key)    NEW_KEY=1; shift;;
+    --save=*)     SAVE="${1#*=}"; shift;;
+    --save)       SAVE="."; shift;;
+    --delete)     ACTION="delete"; shift;;
+    -h|--help)    usage; exit 0;;
+    *) echo "unknown argument: $1" >&2; usage; exit 1;;
+  esac
+done
+
+# aws wrapper — honors the standard --profile for admin creds
+AWS=(aws)
+[[ -n "$PROFILE" ]] && AWS+=(--profile "$PROFILE")
+
+ACCOUNT="$("${AWS[@]}" sts get-caller-identity --query Account --output text)"
+echo "Target account: $ACCOUNT" >&2
+
+POLICY_NAME="${NAME}-ec2-owner"
+ROLE_NAME="${NAME}-ec2"
+USER_NAME="${NAME}-base"
+ASSUME_POLICY_NAME="${NAME}-assume"
+OWNER_TAG="$NAME"
+
+POLICY_ARN="arn:aws:iam::${ACCOUNT}:policy/${POLICY_NAME}"
+ROLE_ARN="arn:aws:iam::${ACCOUNT}:role/${ROLE_NAME}"
+USER_ARN="arn:aws:iam::${ACCOUNT}:user/${USER_NAME}"
+
+# ---------------------------------------------------------------- teardown
+if [[ "$ACTION" == "delete" ]]; then
+  echo "Deleting IAM resources for '$NAME' ..." >&2
+  for k in $("${AWS[@]}" iam list-access-keys --user-name "$USER_NAME" \
+              --query 'AccessKeyMetadata[].AccessKeyId' --output text 2>/dev/null || true); do
+    "${AWS[@]}" iam delete-access-key --user-name "$USER_NAME" --access-key-id "$k" || true
+  done
+  "${AWS[@]}" iam delete-user-policy --user-name "$USER_NAME" --policy-name "$ASSUME_POLICY_NAME" 2>/dev/null || true
+  "${AWS[@]}" iam delete-user --user-name "$USER_NAME" 2>/dev/null || true
+  "${AWS[@]}" iam detach-role-policy --role-name "$ROLE_NAME" --policy-arn "$POLICY_ARN" 2>/dev/null || true
+  "${AWS[@]}" iam delete-role --role-name "$ROLE_NAME" 2>/dev/null || true
+  if "${AWS[@]}" iam get-policy --policy-arn "$POLICY_ARN" >/dev/null 2>&1; then
+    for v in $("${AWS[@]}" iam list-policy-versions --policy-arn "$POLICY_ARN" \
+                --query 'Versions[?!IsDefaultVersion].VersionId' --output text); do
+      "${AWS[@]}" iam delete-policy-version --policy-arn "$POLICY_ARN" --version-id "$v" || true
+    done
+    "${AWS[@]}" iam delete-policy --policy-arn "$POLICY_ARN" || true
+  fi
+  echo "Done." >&2
+  exit 0
+fi
+
+# ---------------------------------------------------------------- policy docs
+TMP="$(mktemp -d)"
+trap 'rm -rf "$TMP"' EXIT
+
+# EC2 ABAC permissions policy (attached to the role)
+cat > "$TMP/perm.json" <<JSON
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "DescribeAllEC2",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:DescribeInstances", "ec2:DescribeImages", "ec2:DescribeKeyPairs",
+        "ec2:DescribeSubnets", "ec2:DescribeSecurityGroups", "ec2:DescribeVpcs",
+        "ec2:DescribeAvailabilityZones", "ec2:DescribeInstanceTypes",
+        "ec2:DescribeInstanceStatus", "ec2:DescribeVolumes", "ec2:DescribeTags",
+        "ec2:DescribeNetworkInterfaces"
+      ],
+      "Resource": "*"
+    },
+    {
+      "Sid": "RunInstancesGatedOnOwnerTag",
+      "Effect": "Allow",
+      "Action": "ec2:RunInstances",
+      "Resource": "arn:aws:ec2:*:*:instance/*",
+      "Condition": {
+        "StringEquals": { "aws:RequestTag/owner": "${OWNER_TAG}" },
+        "ForAllValues:StringEquals": { "aws:TagKeys": ["owner", "Name"] }
+      }
+    },
+    {
+      "Sid": "RunInstancesSupportingResources",
+      "Effect": "Allow",
+      "Action": "ec2:RunInstances",
+      "Resource": [
+        "arn:aws:ec2:*:*:network-interface/*",
+        "arn:aws:ec2:*:*:volume/*",
+        "arn:aws:ec2:*:*:key-pair/*",
+        "arn:aws:ec2:*:*:security-group/*",
+        "arn:aws:ec2:*:*:subnet/*",
+        "arn:aws:ec2:*:*:image/*"
+      ]
+    },
+    {
+      "Sid": "TagOnlyAtLaunch",
+      "Effect": "Allow",
+      "Action": "ec2:CreateTags",
+      "Resource": "arn:aws:ec2:*:*:instance/*",
+      "Condition": {
+        "StringEquals": {
+          "ec2:CreateAction": "RunInstances",
+          "aws:RequestTag/owner": "${OWNER_TAG}"
+        }
+      }
+    },
+    {
+      "Sid": "ManageOnlyOwnedInstances",
+      "Effect": "Allow",
+      "Action": [
+        "ec2:StartInstances", "ec2:StopInstances", "ec2:RebootInstances",
+        "ec2:TerminateInstances", "ec2:ModifyInstanceAttribute"
+      ],
+      "Resource": "arn:aws:ec2:*:*:instance/*",
+      "Condition": {
+        "StringEquals": { "aws:ResourceTag/owner": "${OWNER_TAG}" }
+      }
+    }
+  ]
+}
+JSON
+
+# Trust policy on the role: let the base user assume it
+cat > "$TMP/trust.json" <<JSON
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": { "AWS": "${USER_ARN}" },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
+JSON
+
+# Inline policy on the base user: assume-only, this role only
+cat > "$TMP/assume.json" <<JSON
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": "sts:AssumeRole",
+      "Resource": "${ROLE_ARN}"
+    }
+  ]
+}
+JSON
+
+# ---------------------------------------------------------------- provision
+# 1. Permissions policy (create or update-in-place)
+if "${AWS[@]}" iam get-policy --policy-arn "$POLICY_ARN" >/dev/null 2>&1; then
+  echo "Updating policy $POLICY_NAME ..." >&2
+  for v in $("${AWS[@]}" iam list-policy-versions --policy-arn "$POLICY_ARN" \
+              --query 'Versions[?!IsDefaultVersion].VersionId' --output text); do
+    "${AWS[@]}" iam delete-policy-version --policy-arn "$POLICY_ARN" --version-id "$v" || true
+  done
+  "${AWS[@]}" iam create-policy-version --policy-arn "$POLICY_ARN" \
+      --policy-document "file://$TMP/perm.json" --set-as-default >/dev/null
+else
+  echo "Creating policy $POLICY_NAME ..." >&2
+  "${AWS[@]}" iam create-policy --policy-name "$POLICY_NAME" \
+      --description "EC2 self-management (owner=${OWNER_TAG}) for ${NAME}" \
+      --policy-document "file://$TMP/perm.json" >/dev/null
+fi
+
+# 2. Base user (must exist before the role's trust policy can name it)
+if ! "${AWS[@]}" iam get-user --user-name "$USER_NAME" >/dev/null 2>&1; then
+  echo "Creating user $USER_NAME ..." >&2
+  "${AWS[@]}" iam create-user --user-name "$USER_NAME" \
+      --tags "Key=owner,Value=${OWNER_TAG}" "Key=purpose,Value=ec2-assume-base" >/dev/null
+fi
+"${AWS[@]}" iam put-user-policy --user-name "$USER_NAME" \
+    --policy-name "$ASSUME_POLICY_NAME" --policy-document "file://$TMP/assume.json"
+
+# 3. Role (create or refresh trust + max session), then attach permissions
+if "${AWS[@]}" iam get-role --role-name "$ROLE_NAME" >/dev/null 2>&1; then
+  echo "Updating role $ROLE_NAME ..." >&2
+  "${AWS[@]}" iam update-assume-role-policy --role-name "$ROLE_NAME" \
+      --policy-document "file://$TMP/trust.json"
+  "${AWS[@]}" iam update-role --role-name "$ROLE_NAME" --max-session-duration 43200 || true
+else
+  echo "Creating role $ROLE_NAME ..." >&2
+  # The base user we just created may not have propagated to the trust-policy
+  # validator yet (IAM is eventually consistent) -> "Invalid principal in
+  # policy". Retry with backoff until it converges.
+  for attempt in 1 2 3 4 5 6; do
+    if "${AWS[@]}" iam create-role --role-name "$ROLE_NAME" \
+        --description "EC2 self-management role for ${NAME} (owner=${OWNER_TAG})" \
+        --assume-role-policy-document "file://$TMP/trust.json" \
+        --max-session-duration 43200 >/dev/null 2>"$TMP/err"; then
+      break
+    fi
+    if grep -q "Invalid principal" "$TMP/err" && [[ $attempt -lt 6 ]]; then
+      echo "  base user not yet visible to IAM; retrying in 3s ($attempt/6) ..." >&2
+      sleep 3
+    else
+      cat "$TMP/err" >&2; exit 1
+    fi
+  done
+fi
+"${AWS[@]}" iam attach-role-policy --role-name "$ROLE_NAME" --policy-arn "$POLICY_ARN"
+
+# 4. Access key for the base user
+AK_ID=""; AK_SECRET=""
+EXISTING="$("${AWS[@]}" iam list-access-keys --user-name "$USER_NAME" \
+            --query 'AccessKeyMetadata[].AccessKeyId' --output text 2>/dev/null || true)"
+if [[ -n "$EXISTING" && -z "$NEW_KEY" ]]; then
+  echo "NOTE: $USER_NAME already has access key(s): $EXISTING" >&2
+  echo "      The secret can't be re-retrieved. Re-run with --new-key to rotate." >&2
+else
+  if [[ -n "$EXISTING" ]]; then
+    for k in $EXISTING; do
+      "${AWS[@]}" iam delete-access-key --user-name "$USER_NAME" --access-key-id "$k"
+    done
+  fi
+  read -r AK_ID AK_SECRET < <("${AWS[@]}" iam create-access-key --user-name "$USER_NAME" \
+      --query 'AccessKey.[AccessKeyId,SecretAccessKey]' --output text)
+fi
+
+# ---------------------------------------------------------------- emit config
+# Print to stdout FIRST — the freshly-minted secret can never be retrieved
+# again, so it must reach the screen even if file-saving fails.
+CONFIG_BLOCK="[profile ${NAME}]
+role_arn = ${ROLE_ARN}
+source_profile = ${USER_NAME}
+role_session_name = ${NAME}
+region = ${REGION}"
+
+echo
+echo "==== paste into ~/.aws/config ===================================="
+printf '%s\n' "$CONFIG_BLOCK"
+
+CREDS_BLOCK=""
+if [[ -n "$AK_ID" ]]; then
+  CREDS_BLOCK="[${USER_NAME}]
+aws_access_key_id = ${AK_ID}
+aws_secret_access_key = ${AK_SECRET}"
+  echo
+  echo "==== paste into ~/.aws/credentials (SECRET — handle with care) ==="
+  printf '%s\n' "$CREDS_BLOCK"
+else
+  echo
+  echo "No new credentials emitted (existing key kept; use --new-key to rotate)."
+fi
+
+# Save to files only when --save was given. Never fatal — stdout above is the
+# real deliverable.
+if [[ -n "$SAVE" ]]; then
+  echo
+  if [[ -d "$SAVE" && -w "$SAVE" ]]; then
+    printf '%s\n' "$CONFIG_BLOCK" > "$SAVE/${NAME}.config" && echo "Saved: $SAVE/${NAME}.config"
+    if [[ -n "$CREDS_BLOCK" ]]; then
+      ( umask 077; printf '%s\n' "$CREDS_BLOCK" > "$SAVE/${NAME}.credentials" )
+      echo "Saved: $SAVE/${NAME}.credentials  (mode 600)"
+    fi
+  else
+    echo "WARNING: --save dir '$SAVE' is not a writable directory; files not saved (copy the blocks above)." >&2
+  fi
+fi
+
+echo
+echo "The agent then launches with:  aws --profile ${NAME} ec2 run-instances \\"
+echo "    --image-id ami-... --instance-type t3.small \\"
+echo "    --tag-specifications 'ResourceType=instance,Tags=[{Key=owner,Value=${OWNER_TAG}},{Key=Name,Value=...}]'"
