@@ -1,35 +1,116 @@
 #!/bin/bash
 #
-# You need to specify environment variable AWS_PROFILE
+# create-DNS-updater FQDN [--profile=P] [--new-key] [--invalidate-old-keys]
+#
+# Creates (idempotently) an IAM user "<host>-updater" scoped — via principal
+# tags plus a generic ABAC policy — to change exactly the one DNS record
+# <FQDN> in its Route53 zone, then prints `export` lines for its access key.
+#
+#   --profile=P   AWS CLI profile for YOUR admin creds (passed to `aws`);
+#                 omit to use AWS_PROFILE / the default profile / env vars.
+#   --new-key     create a new access key, leaving existing keys in place.
+#                 (A brand-new user always gets a key without this flag.)
+#   --invalidate-old-keys
+#                 delete the user's existing access key(s). Combine with
+#                 --new-key to rotate (remove old, mint new).
+#
+set -euo pipefail
 
-if [ $# -eq 0 ]; then
-   echo "Usage: $0 FQDN"
-   exit 1
+PROFILE=""
+NEW_KEY=""
+INVALIDATE=""
+FQDN=""
+
+usage() { sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; }
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --profile=*)           PROFILE="${1#*=}"; shift;;
+    --profile)             PROFILE="${2:?}"; shift 2;;
+    --new-key)             NEW_KEY=1; shift;;
+    --invalidate-old-keys) INVALIDATE=1; shift;;
+    -h|--help)             usage; exit 0;;
+    -*)                    echo "unknown option: $1" >&2; usage; exit 1;;
+    *)                     FQDN="$1"; shift;;
+  esac
+done
+
+[[ -n "$FQDN" && "$FQDN" == *.* ]] || { echo "Usage: $0 FQDN [--profile=P] [--new-key]" >&2; exit 1; }
+
+AWS=(aws)
+[[ -n "$PROFILE" ]] && AWS+=(--profile "$PROFILE")
+
+HOST="${FQDN%%.*}"
+DOMAIN="${FQDN#*.}"
+USER="${HOST}-updater"
+echo "FQDN=$FQDN  host=$HOST  domain=$DOMAIN  user=$USER" >&2
+
+# Look up the hosted-zone id for the domain
+ZONE_ID="$("${AWS[@]}" route53 list-hosted-zones \
+            --query "HostedZones[?Name=='${DOMAIN}.'].Id | [0]" --output text | cut -d/ -f3)"
+[[ -n "$ZONE_ID" && "$ZONE_ID" != "None" ]] || { echo "error: no Route53 hosted zone for '${DOMAIN}.'" >&2; exit 1; }
+echo "hosted zone: $ZONE_ID" >&2
+
+# Generic ABAC policy — the per-user scoping comes from the FQDN/HostedZone
+# tags set below, not from this document, so it is fully static.
+POLICY="$(mktemp)"; trap 'rm -f "$POLICY"' EXIT
+cat > "$POLICY" <<'JSON'
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "route53:ChangeResourceRecordSets",
+        "route53:ListResourceRecordSets",
+        "route53:GetHostedZone"
+      ],
+      "Resource": "arn:aws:route53:::hostedzone/${aws:PrincipalTag/HostedZone}"
+    },
+    {
+      "Effect": "Allow",
+      "Action": "route53:ChangeResourceRecordSets",
+      "Resource": "arn:aws:route53:::change/*",
+      "Condition": {
+        "ForAllValues:StringEquals": {
+          "route53:ChangeResourceRecordSetsNormalizedRecordNames": "${aws:PrincipalTag/FQDN}"
+        }
+      }
+    }
+  ]
+}
+JSON
+
+# Create the user if needed; always (re)apply tags and the inline policy
+if ! "${AWS[@]}" iam get-user --user-name "$USER" >/dev/null 2>&1; then
+  echo "Creating user $USER ..." >&2
+  "${AWS[@]}" iam create-user --user-name "$USER" >/dev/null
+fi
+"${AWS[@]}" iam tag-user --user-name "$USER" \
+    --tags "Key=FQDN,Value=${FQDN}" "Key=HostedZone,Value=${ZONE_ID}"
+"${AWS[@]}" iam put-user-policy --user-name "$USER" \
+    --policy-name UpdateSpecificDNSRecord --policy-document "file://$POLICY"
+
+# Access key. --invalidate-old-keys removes existing keys; --new-key (or a
+# brand-new user with no key) mints one. The two are independent.
+EXISTING="$("${AWS[@]}" iam list-access-keys --user-name "$USER" \
+            --query 'AccessKeyMetadata[].AccessKeyId' --output text 2>/dev/null || true)"
+
+if [[ -n "$EXISTING" && -n "$INVALIDATE" ]]; then
+  for k in $EXISTING; do
+    echo "Deleting old access key $k ..." >&2
+    "${AWS[@]}" iam delete-access-key --user-name "$USER" --access-key-id "$k"
+  done
 fi
 
-if [[ $1 != *.* ]]; then
-   echo "Usage: $0 FQDN"
-   exit 1
+if [[ -n "$NEW_KEY" || -z "$EXISTING" ]]; then
+  read -r AK_ID AK_SECRET < <("${AWS[@]}" iam create-access-key --user-name "$USER" \
+      --query 'AccessKey.[AccessKeyId,SecretAccessKey]' --output text)
+  echo "export AWS_ACCESS_KEY_ID=$AK_ID"
+  echo "export AWS_SECRET_ACCESS_KEY=$AK_SECRET"
+elif [[ -n "$INVALIDATE" ]]; then
+  echo "NOTE: deleted old key(s); no new key created (pass --new-key to mint one)." >&2
+else
+  echo "NOTE: $USER already has access key(s): $EXISTING" >&2
+  echo "      --new-key to add one; --invalidate-old-keys to remove them." >&2
 fi
-
-HOST=$(echo $1 | cut -d . -f 1)
-DOMAIN=$(echo $1 | cut -d . -f 2-)
-
-echo $HOST
-echo $DOMAIN
-
-id=$(aws route53 list-hosted-zones --output json --query "HostedZones[?Name=='$DOMAIN.']" | jq --raw-output '.[0].Id' | cut -d / -f 3)
-
-aws iam create-user --user-name $HOST-updater
-aws iam tag-user --user-name $HOST-updater --tags Key=FQDN,Value=$HOST.$DOMAIN
-aws iam tag-user --user-name $HOST-updater --tags Key=HostedZone,Value=$id
-
-aws iam put-user-policy --user-name $HOST-updater --policy-name UpdateSpecificDNSRecord --policy-document file://UpdateSpecificDNSRecordPolicy.json
-
-# Don't need this because put-user-policy created an "inline policy"
-# aws iam attach-user-policy --user-name $HOST-updater --policy-arn arn:aws:iam::616249160619:policy/UpdateSpecificDNSRecord
-
-json=$(aws iam create-access-key --user-name $HOST-updater --output=json)
-
-echo export AWS_ACCESS_KEY_ID=$(jq -r .AccessKey.AccessKeyId <<< "$json")
-echo export AWS_SECRET_ACCESS_KEY=$(jq -r .AccessKey.SecretAccessKey <<< "$json")
