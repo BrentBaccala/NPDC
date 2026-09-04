@@ -1,10 +1,16 @@
 #!/bin/bash
 #
-# create-DNS-updater FQDN [--profile=P] [--new-key] [--invalidate-old-keys]
+# create-DNS-updater FQDN [--profile=P] [--new-key] [--invalidate-old-keys] [--force]
 #
-# Creates (idempotently) an IAM user "<host>-updater" scoped — via principal
-# tags plus a generic ABAC policy — to change exactly the one DNS record
-# <FQDN> in its Route53 zone, then prints `export` lines for its access key.
+# Creates (idempotently) an IAM user "<fqdn-with-dashes>-updater" scoped — via
+# principal tags plus a generic ABAC policy — to change exactly the one DNS
+# record <FQDN> in its Route53 zone, then prints `export` lines for its key.
+#
+# The user name derives from the WHOLE FQDN, not just its first label: two
+# servers whose names share a first label (collaborate.a.com, collaborate.b.com)
+# would otherwise map to one IAM user, and the tag-user call below would
+# silently re-point it at the second FQDN, breaking the first server with no
+# error anywhere but its ddclient log.
 #
 #   --profile=P   AWS CLI profile for YOUR admin creds (passed to `aws`);
 #                 omit to use AWS_PROFILE / the default profile / env vars.
@@ -13,15 +19,19 @@
 #   --invalidate-old-keys
 #                 delete the user's existing access key(s). Combine with
 #                 --new-key to rotate (remove old, mint new).
+#   --force       re-tag a user that is currently tagged for a different FQDN.
+#                 Without it, that case is a hard error rather than a silent
+#                 hijack of another server's updater.
 #
 set -euo pipefail
 
 PROFILE=""
 NEW_KEY=""
 INVALIDATE=""
+FORCE=""
 FQDN=""
 
-usage() { sed -n '2,16p' "$0" | sed 's/^# \{0,1\}//'; }
+usage() { sed -n '2,24p' "$0" | sed 's/^# \{0,1\}//'; }
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -29,6 +39,7 @@ while [[ $# -gt 0 ]]; do
     --profile)             PROFILE="${2:?}"; shift 2;;
     --new-key)             NEW_KEY=1; shift;;
     --invalidate-old-keys) INVALIDATE=1; shift;;
+    --force)               FORCE=1; shift;;
     -h|--help)             usage; exit 0;;
     -*)                    echo "unknown option: $1" >&2; usage; exit 1;;
     *)                     FQDN="$1"; shift;;
@@ -42,7 +53,7 @@ AWS=(aws)
 
 HOST="${FQDN%%.*}"
 DOMAIN="${FQDN#*.}"
-USER="${HOST}-updater"
+USER="${FQDN//./-}-updater"
 echo "FQDN=$FQDN  host=$HOST  domain=$DOMAIN  user=$USER" >&2
 
 # Look up the hosted-zone id for the domain
@@ -85,6 +96,20 @@ JSON
 if ! "${AWS[@]}" iam get-user --user-name "$USER" >/dev/null 2>&1; then
   echo "Creating user $USER ..." >&2
   "${AWS[@]}" iam create-user --user-name "$USER" >/dev/null
+else
+  # Refuse to hijack an updater that is currently scoped to a different record.
+  # The tag-user below is unconditional, so without this check a name clash
+  # re-points an in-use user and silently breaks whichever server had it first.
+  PRIOR_FQDN="$("${AWS[@]}" iam list-user-tags --user-name "$USER" \
+                  --query "Tags[?Key=='FQDN'].Value | [0]" --output text 2>/dev/null || true)"
+  if [[ -n "$PRIOR_FQDN" && "$PRIOR_FQDN" != "None" && "$PRIOR_FQDN" != "$FQDN" ]]; then
+    if [[ -z "$FORCE" ]]; then
+      echo "error: user $USER is tagged for '$PRIOR_FQDN', not '$FQDN'." >&2
+      echo "       Re-tagging would break whatever server uses it. Pass --force to override." >&2
+      exit 1
+    fi
+    echo "WARNING: re-tagging $USER from '$PRIOR_FQDN' to '$FQDN' (--force)" >&2
+  fi
 fi
 "${AWS[@]}" iam tag-user --user-name "$USER" \
     --tags "Key=FQDN,Value=${FQDN}" "Key=HostedZone,Value=${ZONE_ID}"
