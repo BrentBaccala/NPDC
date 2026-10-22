@@ -48,4 +48,9 @@ foreach ($arg in $args) {
 # Queries are separated by commas
 
 $query = 'Reservations[].Instances[].{' + ($queries -join ',') + '}'
-& $aws @switches ec2 describe-instances "--query=$query"
+
+# AWS CLI v2 pipes output through 'more' on Windows; turn that off.
+# (Setting $env:AWS_PAGER = '' doesn't work: PowerShell deletes an
+# environment variable assigned the empty string.)
+
+& $aws --no-cli-pager @switches ec2 describe-instances "--query=$query"
